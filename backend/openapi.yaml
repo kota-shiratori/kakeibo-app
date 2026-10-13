@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: 家計簿アプリ API
+  description: Honoで実装された家計簿アプリのバックエンドAPI
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+    description: ローカル開発環境
+
+# 現状は認証なし
+security: []
+
+tags:
+  - name: transactions
+    description: 収支データの操作
+
+paths:
+  /transactions:
+    get:
+      tags:
+        - transactions
+      operationId: getTransactions
+      summary: 収支一覧を取得する
+      description: 指定した種別の収支一覧と、件数・合計金額を返します。
+      parameters:
+        - $ref: "#/components/parameters/TransactionType"
+      responses:
+        "200":
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+        "400":
+          description: クエリパラメータが不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidType:
+                  $ref: "#/components/examples/InvalidTypeError"
+
+    post:
+      tags:
+        - transactions
+      operationId: createTransaction
+      summary: 収支を登録する
+      description: 収支を1件登録し、受け取った内容をそのまま返します。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionInput"
+      responses:
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionInput"
+        "400":
+          description: リクエストボディが不正
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingFields:
+                  $ref: "#/components/examples/MissingFieldsError"
+                invalidAmount:
+                  $ref: "#/components/examples/InvalidAmountError"
+                invalidDate:
+                  $ref: "#/components/examples/InvalidDateError"
+
+components:
+  parameters:
+    TransactionType:
+      name: type
+      in: query
+      required: true
+      description: 取得する収支の種別
+      schema:
+        type: string
+        enum:
+          - income
+          - expense
+          - all
+      example: all
+
+  schemas:
+    TransactionInput:
+      type: object
+      description: 収支の登録内容
+      required:
+        - item
+        - amount
+        - date
+      properties:
+        item:
+          type: string
+          minLength: 1
+          description: 項目名
+          example: 給料
+        amount:
+          type: number
+          not:
+            const: 0
+          description: 金額（0以外の数値）
+          example: 10000
+        date:
+          type: string
+          format: date
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+          description: 日付（YYYY-MM-DD形式）
+          example: "2025-01-01"
+
+    Transaction:
+      description: 登録済みの収支
+      allOf:
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              type: integer
+              description: 収支ID
+              example: 1
+        - $ref: "#/components/schemas/TransactionInput"
+
+    TransactionListResponse:
+      type: object
+      required:
+        - transactions
+        - totalCount
+        - totalAmount
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        totalCount:
+          type: integer
+          description: 件数
+          example: 1
+        totalAmount:
+          type: number
+          description: 合計金額
+          example: 10000
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: エラーメッセージ
+
+  examples:
+    InvalidTypeError:
+      summary: typeが不正
+      value:
+        message: typeはincome,expense,allのいずれかである必要があります。
+    MissingFieldsError:
+      summary: 必須項目の不足
+      value:
+        message: 必須項目が不足しています。
+    InvalidAmountError:
+      summary: 金額が不正
+      value:
+        message: 金額は0以外の数値である必要があります。
+    InvalidDateError:
+      summary: 日付形式が不正
+      value:
+        message: 日付はYYYY-MM-DD形式で入力してください。

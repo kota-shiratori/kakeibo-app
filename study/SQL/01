@@ -1,0 +1,103 @@
+DDL
+- CREATE
+- ALTER
+- DROP
+
+DML
+- SELECT
+- INSERT
+- UPDATE
+- DELETE
+
+DCL
+- GRANT
+- REVOKE
+
+TCL
+- COMMIT
+- ROLLBACK
+
+CREATE DATABASE kakeibo_db;
+\l
+\q
+
+CREATE TABLE transactions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    item VARCHAR(20) NOT NULL,
+    amount INTEGER NOT NULL,
+    date DATE NOT NULL
+);
+
+\dt
+kakeibo_db=# \dt
+              List of tables
+ Schema |     Name     | Type  |  Owner
+--------+--------------+-------+----------
+ public | transactions | table | postgres
+(1 row)
+
+\d transactions
+kakeibo_db=# \d transactions
+                             Table "public.transactions"
+ Column |         Type          | Collation | Nullable |           Default
+--------+-----------------------+-----------+----------+------------------------------
+ id     | bigint                |           | not null | generated always as identity
+ item   | character varying(20) |           | not null |
+ amount | integer               |           | not null |
+ date   | date                  |           | not null |
+Indexes:
+    "transactions_pkey" PRIMARY KEY, btree (id)
+
+INSERT INTO transactions
+    (item,amount,date) VALUES
+    ('おこづかい', 30000, '2025-10-01');
+
+SELECT * FROM transactions;
+
+SELECT item, amount FROM transactions;
+kakeibo_db=# SELECT item, amount FROM transactions;
+    item    | amount
+------------+--------
+ おこづかい |  30000
+(1 row)
+
+SELECT item, amount FROM transactions WHERE amount < 0;
+SELECT item, amount FROM transactions WHERE date >= '2025-10-01';
+
+SELECT * FROM transactions WHERE date >= '2025-10-01'
+AND date < '2025-11-01';
+
+SELECT * FROM transactions WHERE date >= '2025-10-01'
+AND date < '2025-11-01'
+AND item = 'カフェ'
+OR item = '食料品';
+
+SELECT * FROM transactions WHERE (date >= '2025-10-01'
+AND date < '2025-11-01'
+AND item = 'カフェ'
+OR item = '食料品');
+
+SELECT * FROM transactions ORDER BY amount ASC;
+
+DELETE FROM table
+
+DELETE FROM transactions WHERE id = 7;
+
+UPDATE transactions SET amount = 5000 WHERE id = 1;
+
+UPDATE transactions SET amount = amount * 2 WHERE id = 1;
+
+UPDATE transactions SET amount = 50000, date = ''2025-10-02 WHERE id = 1;
+
+COUNT
+SUM
+AVG
+MAX
+MIN
+
+await client.query(
+  `INSERT INTO transactions (item, amount, date VALUES ($1, $2, $3))`,
+  [item, amount, date],
+);
+SQLインジェクション対策
+プレースホルダー

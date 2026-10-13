@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build && npm run build:study",
+  "outputDirectory": "dist",
+  "redirects": [{ "source": "/study", "destination": "/study/", "permanent": true }],
+  "rewrites": [{ "source": "/((?!study/).*)", "destination": "/index.html" }]
+}

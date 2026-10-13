@@ -1,0 +1,5 @@
+docker pull postgres:18.3
+docker run --name kakeibo-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -v kakeibo-postgres-data:/var/lib/postgresql -d postgres:18.3
+docker ps
+docker exec -it kakeibo-postgres psql -U postgres
+docker exec -it kakeibo-postgres psql -U postgres -d kakeibo_db
