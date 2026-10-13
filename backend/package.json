@@ -1,14 +1,15 @@
 {
-  "name": "backend ",
+  "name": "backend",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/dev.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/dev.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",
     "@t3-oss/env-core": "^0.13.11",
+    "@vercel/functions": "^3.10.0",
     "dotenv": "^18.0.7",
     "hono": "^4.13.13",
     "pg": "^8.23.1",

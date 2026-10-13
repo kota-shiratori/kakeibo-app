@@ -1,19 +1,11 @@
-import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { Client } from "pg";
+import { attachDatabasePool } from "@vercel/functions";
+import { Pool } from "pg";
 import { env } from "./env.js";
 
-const client = new Client({
-  host: env.DATABASE_HOST,
-  port: env.DATABASE_PORT,
-  database: env.DATABASE_NAME,
-  user: env.DATABASE_USER,
-  password: env.DATABASE_PASSWORD,
-  ssl: { rejectUnauthorized: false },
-});
-
-await client.connect();
+const pool = new Pool({ connectionString: env.DATABASE_URL });
+attachDatabasePool(pool);
 
 const app = new Hono();
 
@@ -58,8 +50,8 @@ app.get("/transactions", async (c) => {
 
   historyQuery += ` ORDER BY date DESC`;
 
-  const historyResult = await client.query(historyQuery);
-  const countResult = await client.query(countQuery);
+  const historyResult = await pool.query(historyQuery);
+  const countResult = await pool.query(countQuery);
 
   const transactions = historyResult.rows.map((row) => ({
     id: parseInt(row.id),
@@ -98,7 +90,7 @@ app.post("/transactions", async (c) => {
     return c.json({ message: "日付はYYYY-MM-DD形式で入力してください。" }, 400);
   }
 
-  const result = await client.query(
+  const result = await pool.query(
     `INSERT INTO transactions (item, amount, date) VALUES ($1, $2, $3) RETURNING id, item, amount, date`,
     [item, amount, date],
   );
