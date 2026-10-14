@@ -12,6 +12,10 @@ const CATEGORIES = [
   "ChakraUI",
   "TypeScript",
   "Tooling",
+  "Database",
+  "SQL",
+  "PostgreSQL",
+  "Docker",
 ];
 
 const root = resolve(import.meta.dirname, "..");

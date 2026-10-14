@@ -16,20 +16,24 @@
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:39-48`
+`backend/src/index.ts:63-74`
 
 ```ts
+const totalAmount = transactions.reduce(
+  (sum, transaction) => sum + transaction.amount,
+  0,
+);
+
 const result = {
-  transactions: transactionList,
-  totalCount: transactionList.length,
-  totalAmount: transactionList.reduce(
-    (sum, transaction) => sum + transaction.amount,
-    0,
-  ),
+  transactions,
+  totalCount: parseInt(countResult.rows[0].total),
+  totalAmount,
 };
 
 return c.json(result, 200);
 ```
+
+`transactions` は DB から `SELECT` した行を API の形に変換したもの（`backend/src/index.ts:56-61`）、`totalCount` は別に投げた `SELECT COUNT(*)` の結果（`backend/src/index.ts:42`, `:54`）です。`COUNT(*)` は PostgreSQL では `bigint` で、pg からは文字列（例: `"2"`）で返るため `parseInt` しています（`../PostgreSQL/07-node-postgres-type-conversion.md`）。
 
 仕様書: `backend/openapi.yaml:133-151`
 
@@ -79,9 +83,9 @@ export type TransactionListInfo = {
 
 注意点:
 
-- `totalCount` が「返した件数」なのか「条件に合う全件数」なのかは、ページネーション導入時に意味が分かれます。今は同じ値ですが（`transactionList.length`）、仕様書の `description` で定義を明確にしておくとよいでしょう。
+- `totalCount` が「返した件数」なのか「条件に合う全件数」なのかは、ページネーション導入時に意味が分かれます。今は同じ条件の `COUNT(*)` なので、返した配列の長さと同じ値になります（一覧と件数を別々のクエリで取っているため、間に別の登録が入るとずれる可能性はあります → `../SQL/10-transactions-commit-rollback.md`）。ページネーションを入れる前に、仕様書の `description` で定義を明確にしておくとよいでしょう。
 - `totalAmount` は収入（正）と支出（負）を合計するので、`type=all` のときは「収支差額」になります。`type` ごとの意味の違いを仕様書に書いておくと親切です。
-- 金額を `number`（JavaScript では浮動小数点数）で扱っています。日本円の整数だけなら問題になりにくいですが、小数を含む通貨では誤差に注意が必要です（整数の最小単位で持つ、文字列で持つ等）。
+- 金額を `number`（JavaScript では浮動小数点数）で扱っています。日本円の整数だけなら問題になりにくいですが、小数を含む通貨では誤差に注意が必要です（整数の最小単位で持つ、文字列で持つ等）。DB 側の `amount` 列は `INTEGER` なので、実際には整数しか保存できません（`../PostgreSQL/03-data-types.md`）。
 
 ## 今後に活かせるポイント
 
@@ -90,7 +94,7 @@ export type TransactionListInfo = {
 
 ## 改善するなら
 
-- `amount` が日本円の整数前提なら、仕様書で `type: integer` にすると意図が明確になります（現在は `type: number`、`backend/openapi.yaml:108`, `:149`）。
+- `amount` が日本円の整数前提なら、仕様書で `type: integer` にすると意図が明確になります（現在は `type: number`、`backend/openapi.yaml:108`, `:149`）。DB の列が `INTEGER` なので、`amount: 1.5` を送ると検証を通過して DB でエラーになり 500 が返ります（実験で確認 → `04-http-status-codes.md`）。仕様と DB の型を揃える意味でも `integer` が適切です。
 - ページネーション導入時のイメージ:
 
 ```json

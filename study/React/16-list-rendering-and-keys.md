@@ -87,7 +87,12 @@ key があれば React は「key=4 が先頭に追加され、key=1 が消えた
 
 ### 「最近の」取引の並び順をクライアントで保証する
 
-現在は「サーバーが返した順の先頭 3 件」を表示しています。サーバーが日付の新しい順に返していなければ「最近の」取引にはなりません。サーバー側の仕様（study/API-Design 参照）で保証するのが本筋ですが、クライアントでも並べ替えるなら非破壊の `toSorted`（ES2023）が使えます。`tsconfig.app.json` の `lib` に `"ES2023"` が含まれているので型も利用可能です。
+現在は「サーバーが返した順の先頭 3 件」を表示しています。backend は PostgreSQL から `ORDER BY date DESC`（`backend/src/index.ts:51`）で取得しているので、今は日付の新しい順に並んで返ってきます。ただし、
+
+- 並び順は OpenAPI の仕様には書かれておらず、**実装がたまたまそうなっているだけ** です（study/API-Design 参照）。
+- `ORDER BY date DESC` だけでは **同じ日付の取引どうしの順番は決まりません**（study/SQL の `07-order-by.md` 参照）。同じ日に複数登録すると、どれが「先頭 3 件」に入るかは保証されません。
+
+仕様と SQL（例: `ORDER BY date DESC, id DESC`）で保証するのが本筋ですが、クライアントでも並べ替えるなら非破壊の `toSorted`（ES2023）が使えます。`tsconfig.app.json` の `lib` に `"ES2023"` が含まれているので型も利用可能です。
 
 ```tsx
 const recentTransactions = transactionList.transactions

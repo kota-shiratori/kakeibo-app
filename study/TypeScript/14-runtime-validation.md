@@ -13,29 +13,29 @@ TypeScript の型はコンパイル時にしか存在しないので、「実行
 
 ### 実装済み: 環境変数を Zod で検証（backend）
 
-`backend/src/env.ts:1`
+`backend/src/env.ts:1-10`
 
 ```ts
 import { createEnv } from "@t3-oss/env-core";
 import z from "zod";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 export const env = createEnv({
   server: {
     FRONTEND_URL: z.string(),
+    DATABASE_URL: z.string(),
   },
   runtimeEnv: process.env,
 });
 ```
 
-- `process.env.FRONTEND_URL` の型は Node.js の型定義上 `string | undefined` ですが、`createEnv` が起動時に Zod で検証し、通れば **`env.FRONTEND_URL` は `string` 型** として使えます（`backend/src/index.ts:11`）。
+（`.env` の読み込みは以前 `env.ts` 内の `dotenv.config()` で行っていましたが、現在はローカル起動用の `backend/src/dev.ts:2` の `import "dotenv/config"` に移っています。）
+
+- `process.env.FRONTEND_URL` の型は Node.js の型定義上 `string | undefined` ですが、`createEnv` が起動時に Zod で検証し、通れば **`env.FRONTEND_URL` / `env.DATABASE_URL` は `string` 型** として使えます（`backend/src/index.ts:15` の CORS の `origin`、`:7` の `new Pool({ connectionString: env.DATABASE_URL })`）。
 - 型はスキーマ `z.string()` から推論されています。「検証ロジック」と「型」が 1 か所にまとまっている点が、`as` との大きな違いです。
 
 ### 手書きの検証（backend の POST）
 
-`backend/src/index.ts:52`
+`backend/src/index.ts:78-91`
 
 ```ts
 const body = await c.req.json();
@@ -47,6 +47,10 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ... 400 }
 ```
 
 - 実行時のチェックとしては機能していますが、`c.req.json()` の戻り値は `any`（`backend/node_modules/hono/dist/types/request.d.ts:141` の `json<T = any>(): Promise<T>`）なので、`item` / `amount` / `date` もすべて `any` です。そのため `typeof amount !== "number"` の後でも型の絞り込みの恩恵はほぼなく、`item` が文字列かどうかもチェックされていません（`!item` は空文字や `0` を弾くだけ）。
+
+### 検証なし（DB から読んだ行）
+
+`pg` の `pool.query()` は型引数を渡さないと行の型が `any` です（`backend/node_modules/@types/pg/index.d.ts:104-105` の `QueryResult<R extends QueryResultRow = any>` / `rows: R[]`）。`backend/src/index.ts:56-61` の `row.id` / `row.amount` などはすべて `any` で、DB の列名を打ち間違えても型エラーになりません（→ `17-any-propagation.md`、実際の値の型は `../PostgreSQL/07-node-postgres-type-conversion.md`）。
 
 ### 検証なし（web-app）
 

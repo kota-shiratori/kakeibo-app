@@ -15,13 +15,13 @@ REST（Representational State Transfer）は、Web API を設計するときの�
 
 バックエンドは `/transactions` という 1 つのリソースに、2 つのメソッドを割り当てています。
 
-`backend/src/index.ts:18`
+`backend/src/index.ts:29`
 
 ```ts
 app.get("/transactions", async (c) => {
 ```
 
-`backend/src/index.ts:51`
+`backend/src/index.ts:77`
 
 ```ts
 app.post("/transactions", async (c) => {
@@ -42,15 +42,15 @@ paths:
 
 | メソッド + パス | 意味 | 実装 |
 | --- | --- | --- |
-| `GET /transactions?type=...` | 収支の一覧を取得 | `backend/src/index.ts:18-49` |
-| `POST /transactions` | 収支を 1 件作成 | `backend/src/index.ts:51-84` |
+| `GET /transactions?type=...` | 収支の一覧を取得（DB から `SELECT`） | `backend/src/index.ts:29-75` |
+| `POST /transactions` | 収支を 1 件作成（DB に `INSERT` し、採番された `id` 付きで返す） | `backend/src/index.ts:77-106` |
 
 フロントエンド側も、同じ URL に対してメソッドを変えて呼んでいます。
 
 - 取得: `web-app/src/hooks/useIncomeTransactions.ts:15` — `fetch(\`${BASE_URL}/transactions?type=income\`)`（メソッド省略時は GET）
 - 作成: `web-app/src/hooks/useAddTransactions.ts:14-18` — `method: "POST"`
 
-なお、CORS 設定では `PUT` と `DELETE` も許可されていますが（`backend/src/index.ts:12`）、現時点でそれらのルートは存在しません。今後「更新」「削除」を追加するときの準備と読めます。
+なお、CORS 設定では `PUT` と `DELETE` も許可されていますが（`backend/src/index.ts:16`）、現時点でそれらのルートは存在しません。今後「更新」「削除」を追加するときの準備と読めます。
 
 ## 重要語句
 

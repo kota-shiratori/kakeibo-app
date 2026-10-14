@@ -18,23 +18,31 @@
 
 | コード | 使っている場所 | 意味 |
 | --- | --- | --- |
-| 200 OK | `backend/src/index.ts:48` | 一覧取得成功 |
-| 201 Created | `backend/src/index.ts:83` | 登録成功 |
-| 400 Bad Request | `backend/src/index.ts:26`, `:61`, `:70`, `:79` | `type` が不正 / 必須項目不足 / 金額不正 / 日付形式不正 |
+| 200 OK | `backend/src/index.ts:74` | 一覧取得成功 |
+| 201 Created | `backend/src/index.ts:105` | 登録成功（DB に `INSERT` し、採番された `id` 付きの行を返す） |
+| 400 Bad Request | `backend/src/index.ts:33-38`, `:82`, `:86`, `:90` | `type` が不正 / 必須項目不足 / 金額不正 / 日付形式不正 |
 | 204 No Content | Hono の CORS ミドルウェアが OPTIONS に返す | プリフライト応答（→ `20-cors-mechanism-preflight.md`） |
-| 500 Internal Server Error | Hono の既定エラーハンドラ | 不正な JSON などで例外が起きたとき（意図して返しているわけではない） |
+| 500 Internal Server Error | Hono の既定エラーハンドラ | 不正な JSON、DB の制約違反、DB に接続できないなど、例外が起きたとき（意図して返しているわけではない） |
 
 OpenAPI でも、操作ごとに返しうるコードが書かれています（`backend/openapi.yaml:28-43`, `backend/openapi.yaml:57-76`）。
 
 ### 実際に確認した挙動
 
-起動中のサーバーに curl で送って確かめた結果です。
+現在の `backend/src/index.ts` を、実験用の DB（`transactions` テーブルだけを作った使い捨ての DB）に接続して `app.request()` で確かめた結果です。
 
-- `GET /transactions`（type なし）→ `400`、JSON の `{ message }`
-- `POST /transactions` に壊れた JSON（`{bad`）→ `500`、`content-type: text/plain` で本文 `Internal Server Error`
-- `POST /transactions` に JSON の `null` → `500`（`const { item, amount, date } = body;` で null を分割代入して TypeError）
+| リクエスト | 結果 |
+| --- | --- |
+| `GET /transactions`（type なし） | `400`、JSON の `{ message }` |
+| `POST` 正しいボディ（`{"item":"給料","amount":10000,"date":"2025-10-01"}`） | `201`、`{"id":1,"item":"給料","amount":10000,"date":"2025-10-01"}` |
+| `POST` 壊れた JSON（`{bad`） | `500`、`content-type: text/plain` で本文 `Internal Server Error` |
+| `POST` JSON の `null` | `500`（`const { item, amount, date } = body;` で null を分割代入して TypeError） |
+| `POST` `item` が 21 文字 | `500`（DB が `22001 value too long for type character varying(20)`） |
+| `POST` `amount` が `1.5` | `500`（DB が `22P02 invalid input syntax for type integer`） |
+| `POST` `amount` が `2147483648` | `500`（DB が `22003 ... out of range for type integer`） |
+| `POST` `date` が `2025-02-30` | `500`（正規表現は通過し、DB が `22008 date/time field value out of range`） |
+| DB に接続できない（`DATABASE_URL` のポート違い） | `500`（pg が `ECONNREFUSED`） |
 
-最後の 2 つは本来「クライアントのリクエストが悪い」ので **400 にすべき** ケースです。Hono の `c.req.json()` は中身を `JSON.parse` するだけなので（`backend/node_modules/hono/dist/request.js:104-106`）、パース失敗の例外がそのまま既定のエラーハンドラ（`backend/node_modules/hono/dist/hono-base.js:14-21`）まで届き、500 になります。
+DB 接続失敗以外はすべて、本来「クライアントのリクエストが悪い」ので **400 にすべき** ケースです。DB のエラーコード（SQLSTATE）の意味は `../PostgreSQL/05-constraints-and-errors.md` を参照してください。Hono の `c.req.json()` は中身を `JSON.parse` するだけなので（`backend/node_modules/hono/dist/request.js:104-106`）、パース失敗の例外がそのまま既定のエラーハンドラ（`backend/node_modules/hono/dist/hono-base.js:14-21`）まで届き、500 になります。
 
 ## 重要語句
 
@@ -75,7 +83,7 @@ OpenAPI でも、操作ごとに返しうるコードが書かれています（
 
 ## 改善するなら
 
-不正な JSON を 400 で返すようにします。
+不正な JSON を 400 で返すようにします（DB の型・制約に合わせた検証で、DB エラー由来の 500 も防ぐ → `09-input-validation-rules.md`、`../Database/03-schema-design-for-kakeibo.md`）。
 
 ```ts
 app.post("/transactions", async (c) => {

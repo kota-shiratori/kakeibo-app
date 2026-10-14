@@ -41,7 +41,7 @@ POST /transactions
           └─ examples → MissingFieldsError / InvalidAmountError / InvalidDateError (:72, :74, :76)
 ```
 
-`TransactionInput` は「リクエストボディ」「201 レスポンス」「`Transaction` の一部」の 3 か所から使われています。たとえば `item` に `maxLength: 20` を追加したくなったら、`backend/openapi.yaml:102-106` の 1 か所を直すだけで全部に反映されます。
+`TransactionInput` は「リクエストボディ」「201 レスポンス」「`Transaction` の一部」の 3 か所から使われています。ただし「201 レスポンス」からの参照は、実装が `id` 付きの行を返すようになった今では誤りで、`Transaction` を参照すべき箇所です（→ `14-openapi-request-body-responses.md`、`18-spec-vs-implementation-gaps.md`）。たとえば `item` に `maxLength: 20` を追加したくなったら、`backend/openapi.yaml:102-106` の 1 か所を直すだけで全部に反映されます。
 
 ### examples の再利用
 
@@ -55,7 +55,7 @@ examples:
       message: typeはincome,expense,allのいずれかである必要があります。
 ```
 
-Example Object は `summary`（短い説明）と `value`（実際の値）を持ちます。`value` の `message` は実装のエラーメッセージ（`backend/src/index.ts:24`）と同じ文言で、ドキュメントを読むだけで実際に返る値が分かります。
+Example Object は `summary`（短い説明）と `value`（実際の値）を持ちます。`value` の `message` は実装のエラーメッセージ（`backend/src/index.ts:35`）と同じ文言で、ドキュメントを読むだけで実際に返る値が分かります。
 
 ## 重要語句
 

@@ -44,6 +44,10 @@ try {
 2. サーバー停止・CORS 拒否 → `fetch` 自体が reject（`TypeError`）→ `catch` へ。
 3. 201 が返る → `response.ok === true` → `return true`。
 
+1 には、DB の制約違反（21 文字の `item` など）や DB に接続できないときの **500** も含まれます。`response.ok` は 200〜299 以外をすべて `false` にするので、500 も同じく `catch` に流れます。
+
+なお、POST の 201 のボディには DB が採番した `id` 付きの登録結果（`{"id":1,"item":"給料",...}`）が入っていますが、`useAddTransactions` はボディを読まずに `true` を返しています。一覧は Home に戻ったときに再取得しているので、今のところ困りません。
+
 `if (!response.ok)` がなければ、1 のケースでも「登録成功」と扱ってしまいます。この 1 行が重要です。
 
 取得系も同じパターンです（`web-app/src/hooks/useIncomeTransactions.ts:14-27`, `web-app/src/hooks/useExpenseTransactions.ts:14-27`）。

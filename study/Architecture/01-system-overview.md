@@ -5,7 +5,7 @@
 kakeibo-app（シンプル家計簿）は、**ブラウザで動く画面（フロントエンド）** と **データを返すサーバー（バックエンド）** を、別々のプログラムとして作る構成になっています。
 
 - `web-app/` … React で作った **SPA（Single Page Application）**。画面の表示と操作を担当する。
-- `backend/` … Hono で作った **API サーバー**。データの検証・計算・（将来は）保存を担当し、結果を **JSON** で返す。
+- `backend/` … Hono で作った **API サーバー**。データの検証・計算・PostgreSQL への保存と読み出しを担当し、結果を **JSON** で返す。
 
 両者は HTTP（`fetch` → JSON）だけでつながっており、お互いの内部実装を知りません。この「分離」が、このアプリの設計全体を理解する出発点です。
 
@@ -26,11 +26,15 @@ flowchart LR
   subgraph Dev["開発用サーバー群（ローカル）"]
     Vite["Vite dev server<br/>(npm run dev / web-app)"]
     Hono["Hono API サーバー<br/>(npm run dev / backend)<br/>port 3000"]
+    DB[("PostgreSQL 18.3<br/>(Docker: kakeibo-postgres)<br/>port 5432")]
   end
   Vite -- "HTML / JS モジュールを配信" --> SPA
   SPA -- "fetch(VITE_API_BASE_URL + /transactions)" --> Hono
   Hono -- "JSON" --> SPA
+  Hono -- "SQL（pg の Pool）" --> DB
 ```
+
+本番では、web-app（と学習ノート `/study/`）と backend をそれぞれ Vercel にデプロイし、DB は Neon の PostgreSQL を使う構成です（コミット `2a1609f` / `b00677a`、`web-app/vercel.json`）。backend は Vercel Functions 上で `export default app`（`backend/src/index.ts:108`）が直接使われ、ローカルでは `backend/src/dev.ts` が `@hono/node-server` で起動します。DB まわりは `../Docker/`・`../PostgreSQL/` を参照。
 
 ポイント: **Vite dev server はアプリの JavaScript を配るだけ**で、API リクエストを中継（プロキシ）していません（`web-app/vite.config.ts` に `server.proxy` の設定はない）。ブラウザは Hono サーバーへ **直接** `fetch` します。オリジン（ポート）が違うので、バックエンド側で CORS を許可しています。
 
@@ -42,17 +46,19 @@ flowchart LR
 | web-app | `web-app/src/pages/*.tsx` | 画面単位の組み立て、フォーム入力の管理 |
 | web-app | `web-app/src/components/*.tsx` | 表示部品 |
 | web-app | `web-app/src/hooks/*.ts` | API 通信と、その結果（データ・読み込み中・エラー）の状態管理 |
-| backend | `backend/src/index.ts` | CORS、ルーティング、入力検証、集計（件数・合計）、レスポンス生成 |
-| backend | `backend/src/env.ts` | 環境変数の読み込みと検証 |
+| backend | `backend/src/index.ts` | DB 接続（Pool）、CORS、ルーティング、入力検証、SQL の実行、集計（合計）、レスポンス生成。`app` を export する |
+| backend | `backend/src/dev.ts` | ローカル開発用の起動（dotenv で `.env` を読み、`serve` でポート 3000 で待ち受け） |
+| backend | `backend/src/env.ts` | 環境変数（`FRONTEND_URL` / `DATABASE_URL`）の読み込みと検証 |
+| DB | PostgreSQL（`transactions` テーブル） | データの保存。ローカルは Docker、本番は Neon（`../Database/`） |
 | backend | `backend/openapi.yaml` | API の仕様書（契約） |
 
-バックエンドのエンドポイントは現状 2 つだけです（`backend/src/index.ts:18`, `backend/src/index.ts:51`）。
+バックエンドのエンドポイントは現状 2 つだけです（`backend/src/index.ts:29`, `backend/src/index.ts:77`）。
 
 ```ts
-// backend/src/index.ts:18
-app.get("/transactions", async (c) => { ... });   // 一覧 + 件数 + 合計金額
-// backend/src/index.ts:51
-app.post("/transactions", async (c) => { ... });  // 1件登録（現状は保存せず返すだけ）
+// backend/src/index.ts:29
+app.get("/transactions", async (c) => { ... });   // 一覧 + 件数 + 合計金額（SELECT）
+// backend/src/index.ts:77
+app.post("/transactions", async (c) => { ... });  // 1件登録（INSERT して id 付きで返す）
 ```
 
 フロントの画面も 2 つです（`web-app/src/App.tsx:9-10`）。
@@ -72,7 +78,7 @@ app.post("/transactions", async (c) => { ... });  // 1件登録（現状は保�
 
 ## 仕様・注意点
 
-- 現状のバックエンドは **永続化（DB）がなく**、GET はハードコードされた 1 件を返し、POST は受け取った値を返すだけです（詳細は `15-persistence-and-repository-layer.md`）。
+- バックエンドは **PostgreSQL にデータを保存** します（ローカルは Docker、本番は Neon）。GET は `SELECT`、POST は `INSERT` してその結果を返します（詳細は `15-persistence-and-repository-layer.md`）。
 - フロントとバックはリポジトリ内に並んでいますが、**ビルド・依存関係は完全に独立**しています（`03-repository-structure.md`）。
 - 「分離」には代償もあります。API の仕様と TypeScript の型を両側で別々に管理する必要が生まれます（`14-api-contract-and-types.md`）。
 

@@ -36,7 +36,7 @@ Access-Control-Request-Headers: content-type
 | `GET /transactions?type=income`（`web-app/src/hooks/useIncomeTransactions.ts:15`） | 単純リクエスト | GET で、追加ヘッダーなし |
 | `POST /transactions` + `Content-Type: application/json`（`web-app/src/hooks/useAddTransactions.ts:14-18`） | **プリフライトあり** | `application/json` はセーフリスト外 |
 
-バックエンドの CORS 設定: `backend/src/index.ts:8-16`
+バックエンドの CORS 設定: `backend/src/index.ts:12-20`
 
 ```ts
 app.use(
@@ -53,18 +53,21 @@ app.use(
 - `allowHeaders` に `Content-Type` が入っているので、JSON の POST のプリフライトが通ります。
 - `"/*"` で全パスに適用しているので、`OPTIONS /transactions` にもミドルウェアが応答します（ルートとして `app.options` を定義していなくてもよい）。
 
-### 実際のプリフライト応答（curl で確認）
+### 実際のプリフライト応答（`app.request()` で確認、`FRONTEND_URL=http://localhost:5173`）
+
+許可リストにある Origin（`http://localhost:5173`）の場合:
 
 ```
 OPTIONS /transactions
-→ HTTP/1.1 204 No Content
+→ 204 No Content
   access-control-allow-credentials: true
   access-control-allow-headers: Content-Type,Authorization
   access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS
+  access-control-allow-origin: http://localhost:5173
   vary: Origin, Access-Control-Request-Headers
 ```
 
-（この確認では許可リストにない Origin を送ったため `Access-Control-Allow-Origin` は付いていません。許可リストにある Origin なら、その Origin の値がそのまま返ります。）
+許可リストにない Origin（`http://evil.example`）の場合も 204 が返りますが、`access-control-allow-origin` が **付きません**。ブラウザはこれを見て本番のリクエストを送らずに CORS エラーにします。
 
 Hono の実装では、`OPTIONS` リクエストのときにこれらのヘッダーを付けて **204 No Content を即座に返し、後続のハンドラは実行しません**（`backend/node_modules/hono/dist/middleware/cors/index.js:81-102`）。
 
@@ -85,8 +88,8 @@ Hono の実装では、`OPTIONS` リクエストのときにこれらのヘッ�
 
 ## 仕様・注意点
 
-- **CORS はサーバーを守る仕組みではなく、ブラウザのユーザーを守る仕組み** です。単純リクエストは CORS で許可されていなくても **サーバーまで届いて処理されます**。実際、許可リストにない Origin を付けて `POST` を curl で送っても、サーバーは 201 を返しました（curl はブラウザではないので CORS を確認しません）。
-- そのため「CORS を設定したから他サイトからの書き込みは防げる」とは考えないこと。特に `c.req.json()` は `text/plain` のボディも JSON として処理するので（→ `07-json-and-content-type.md`）、他サイトのページからプリフライトなしの `text/plain` POST を送り込める余地があります。保存処理を実装するなら、Content-Type の確認や CSRF 対策を検討しましょう。
+- **CORS はサーバーを守る仕組みではなく、ブラウザのユーザーを守る仕組み** です。単純リクエストは CORS で許可されていなくても **サーバーまで届いて処理されます**。実際、許可リストにない Origin（`http://evil.example`）を付けて `Content-Type: text/plain` の `POST` を送ると、サーバーは 201 を返し、**データは DB に保存されました**（`app.request()` で確認。レスポンスに `access-control-allow-origin` は付かないので、ブラウザならレスポンスを読めないだけで、登録自体は行われます）。
+- そのため「CORS を設定したから他サイトからの書き込みは防げる」とは考えないこと。特に `c.req.json()` は `text/plain` のボディも JSON として処理するので（→ `07-json-and-content-type.md`）、他サイトのページからプリフライトなしの `text/plain` POST を送り込める余地があります。POST は実際に DB へ保存するようになったので、Content-Type の確認（`application/json` 以外は 415）や CSRF 対策を検討しましょう。
 - プリフライトは本番リクエストのたびに発生しうるので、`maxAge` を設定するとリクエスト回数を減らせます（ブラウザごとに上限あり）。
 - `Access-Control-Allow-Origin` には **オリジンを 1 つだけ** 書けます（カンマ区切りで複数は不可）。複数許可したい場合、Hono のようにリクエストの `Origin` が許可リストにあればその値を返す、という実装になります（`backend/node_modules/hono/dist/middleware/cors/index.js:59-65`）。
 - `allowMethods` に `OPTIONS` を含めているのは害はありませんが、プリフライト自体の許可には不要です。

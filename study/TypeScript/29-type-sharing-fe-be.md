@@ -41,33 +41,39 @@ type TransactionType = "income" | "expense";
 
 ### 2. backend のコード
 
-`backend/src/index.ts:30`
+`backend/src/index.ts:56-72`
 
 ```ts
-const transactionList = [
-  { id: 1, item: "給料", amount: 10000, date: "2025-01-01" },
-];
+const transactions = historyResult.rows.map((row) => ({
+  id: parseInt(row.id),
+  item: row.item,
+  amount: parseFloat(row.amount),
+  date: toYMD(new Date(row.date)),
+}));
 
 const result = {
-  transactions: transactionList,
-  totalCount: transactionList.length,
-  totalAmount: transactionList.reduce((sum, transaction) => sum + transaction.amount, 0),
+  transactions,
+  totalCount: parseInt(countResult.rows[0].total),
+  totalAmount,
 };
 ```
 
-（説明のため改行を詰めています。）型注釈は無く、TypeScript はこのリテラルから `{ id: number; item: string; amount: number; date: string }[]` などと推論しています。POST の入力は `c.req.json()` 由来で `any` です（→ `17-any-propagation.md`）。クエリの種別は文字列配列 `["income", "expense", "all"]` でチェックされています（`backend/src/index.ts:21`）。
+以前はハンドラ内の固定配列（`{ id: 1, item: "給料", ... }`）を返していましたが、現在は PostgreSQL から読んだ行を変換して返します。型注釈は無く、`row` は `pg` の型定義上 `any` なので（→ `17-any-propagation.md`）、`item: row.item` も `date` 以外は推論が効かず、`transactions` は `{ id: number; item: any; amount: number; date: string }[]` のような型になります（`parseInt` / `parseFloat` / `toYMD` の戻り値の型だけが付く）。POST の入力は `c.req.json()` 由来で `any`、登録結果も `result.rows[0]`（`any`）から組み立てています（`backend/src/index.ts:93-105`）。クエリの種別は文字列配列 `["income", "expense", "all"]` でチェックされています（`backend/src/index.ts:32`）。
+
+さらに、型とは別に **DB のテーブル定義**（`item VARCHAR(20)`、`amount INTEGER` など）という 4 つ目の「形の定義」が加わりました（`../Database/03-schema-design-for-kakeibo.md`）。
 
 ### 3. OpenAPI 仕様
 
-`backend/openapi.yaml:94` 以降に `TransactionInput`、`Transaction`、`TransactionListResponse` が定義され、`:80` で `type` クエリが `enum: [income, expense, all]` と定義されています。
+`backend/openapi.yaml:94` 以降に `TransactionInput`、`Transaction`（`:120`）、`TransactionListResponse`（`:133`）が定義され、`:80` 以降の `TransactionType` パラメータで `type` クエリが `enum: [income, expense, all]` と定義されています。POST の 201 レスポンスは `TransactionInput`（`id` なし）を指したままですが（`:58-63`）、実装は DB が採番した `id` 付きの値を返すようになったので、ここもずれています。
 
 ### 対応関係とずれ
 
 | 概念 | web-app | backend | openapi.yaml |
 | --- | --- | --- | --- |
-| 取引 | `Transaction` | 推論のみ | `Transaction`（`id` は `integer`） |
+| 取引 | `Transaction` | 推論のみ（DB の行は `any`） | `Transaction`（`id` は `integer`） |
 | 一覧レスポンス | `TransactionListInfo` | `result` の推論型 | `TransactionListResponse` |
 | 登録入力 | `NewTransaction` | `any`（手書き検証） | `TransactionInput` |
+| 登録結果（201） | `useAddTransactions` は本文を使っていない | `id` 付きの推論型 | `TransactionInput`（`id` なし。ずれ） |
 | 種別 | `"income" \| "expense"`（`Input.tsx` 内） | `string`（配列でチェック） | `income / expense / all` |
 
 - 名前が場所ごとに違います（`TransactionListInfo` と `TransactionListResponse`、`NewTransaction` と `TransactionInput`）。
@@ -86,7 +92,7 @@ const result = {
 ## 仕様・注意点
 
 - **型を共有しても、実行時の保証にはなりません。** 共有された型はあくまでコンパイル時の約束で、実際のレスポンスがその形かはランタイム検証で確認する必要があります（→ `14-runtime-validation.md`）。型共有とランタイム検証はセットで考えます。
-- **web-app と backend で TypeScript のバージョンも tsconfig も違います**（6.0 + `bundler` / 7.0 + `NodeNext`）。共有パッケージを作る場合、両方の設定で問題なく読める書き方（相対 import に拡張子を付ける、型だけのファイルにする、など）が必要です。
+- **web-app と backend で tsconfig が違います**（以前は 6.0 + `bundler` / 7.0 + `NodeNext`。現在はバージョンは両方 6.0.3 に揃ったが、`bundler` / `NodeNext` の違いは残っている）。共有パッケージを作る場合、両方の設定で問題なく読める書き方（相対 import に拡張子を付ける、型だけのファイルにする、など）が必要です。
 - 共有する型には、ブラウザ専用・Node.js 専用の API を含めないようにします。
 
 ## 今後に活かせるポイント

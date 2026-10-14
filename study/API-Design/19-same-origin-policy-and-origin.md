@@ -28,7 +28,7 @@
 このプロジェクトは 2 つのサーバーで構成されています。
 
 - **フロントエンド**: Vite の開発サーバー。`web-app/vite.config.ts` でポートを指定していないので、Vite の既定ポート **5173** で起動します。
-- **バックエンド**: Hono。`backend/src/index.ts:89` で **3000** 番ポートを指定。
+- **バックエンド**: Hono。ローカル起動用のエントリ `backend/src/dev.ts:6` で **3000** 番ポートを指定（本番は Vercel Functions で動き、ポートは Vercel が管理）。
 
 ブラウザで開いたページ（5173 番）の JavaScript が、`fetch` で 3000 番の API を呼んでいます。
 
@@ -40,7 +40,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const response = await fetch(`${BASE_URL}/transactions?type=income`);
 ```
 
-ポートが違うので **クロスオリジン** のリクエストになり、バックエンドが CORS で許可しない限り、ブラウザは JavaScript にレスポンスを渡しません。そのためバックエンドで CORS を設定しています（`backend/src/index.ts:8-16`）。
+ポートが違うので **クロスオリジン** のリクエストになり、バックエンドが CORS で許可しない限り、ブラウザは JavaScript にレスポンスを渡しません。そのためバックエンドで CORS を設定しています（`backend/src/index.ts:12-20`）。
 
 ## 重要語句
 

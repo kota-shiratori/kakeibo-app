@@ -18,22 +18,22 @@ backend・web-app それぞれに lock ファイルがあります。
 ```json
 // backend/package-lock.json:1-8
 {
-  "name": "backend ",
+  "name": "backend",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
-      "name": "backend ",
+      "name": "backend",
       "dependencies": {
 ```
 
 - `lockfileVersion: 3` は npm 9 以降が使う形式（npm 7 以降なら読める。この環境の npm は 10.9.0）。
-- `packages[""]` がプロジェクト自身。`package.json` の内容（名前の末尾スペースも含めて）がコピーされています。
+- `packages[""]` がプロジェクト自身。`package.json` の内容がコピーされています（以前 `package.json` の名前に末尾スペースがあったときは、ここにも `"backend "` とそのままコピーされていました。現在は両方とも修正済み）。
 
 個々のパッケージはこう記録されます。
 
 ```json
-// backend/package-lock.json:866-878
+// backend/package-lock.json:624-636
 "node_modules/esbuild": {
   "version": "0.28.2",
   "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
@@ -88,7 +88,7 @@ web-app の lock は約 115KB（`web-app/package-lock.json`）と大きく、Cha
   - run: npm run lint && npm run build
     working-directory: web-app
   ```
-- backend の `name` を直したら（[01](./01-package-json-basics.md) 参照）、`npm install` で lock の `name` も更新してから一緒にコミットする。
+- `package.json` の `name` などを変えたら、`npm install` で lock 側も更新してから一緒にコミットする（backend の名前の末尾スペースはこの手順で修正済み。[01](./01-package-json-basics.md) 参照）。
 
 ## 次に学ぶこと
 

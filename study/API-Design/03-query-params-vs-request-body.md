@@ -27,7 +27,7 @@
 
 サーバーはクエリを取り出し、許可された値かどうかを確認しています。
 
-`backend/src/index.ts:19-28`
+`backend/src/index.ts:30-39`
 
 ```ts
 const type = c.req.query("type");
@@ -54,13 +54,14 @@ const response = await fetch(`${BASE_URL}/transactions`, {
 });
 ```
 
-`backend/src/index.ts:52-54`
+`backend/src/index.ts:78-79`
 
 ```ts
 const body = await c.req.json();
-
 const { item, amount, date } = body;
 ```
+
+取り出した値は検証後、プレースホルダー `$1, $2, $3` で SQL に渡されます（`backend/src/index.ts:93-96`、`../SQL/11-placeholders-and-sql-injection.md`）。
 
 ## 重要語句
 
@@ -74,7 +75,7 @@ const { item, amount, date } = body;
 - クエリは URL の一部なので、ブラウザ履歴・サーバーログ・プロキシのログに残ります。パスワードやトークンなどの秘密情報は入れてはいけません。
 - GET にボディを付けることは HTTP 仕様上「意味が定義されていない」扱いで、ブラウザの `fetch` では GET/HEAD にボディを付けると例外になります。
 - このプロジェクトでは `type` は **必須** です（`backend/openapi.yaml:83` の `required: true`、実装も未指定なら 400）。「指定がなければ all」とする設計もよくあります（→ 改善するなら）。
-- 収入か支出かはデータに `type` 列があるわけではなく、**金額の符号** で表しています。支出は入力画面で負の数に変換して送っています（`web-app/src/pages/Input.tsx:32-36`）。つまり `type=income` の絞り込みは「`amount > 0`」に相当する設計です（ただし実装はまだ絞り込みをしていません → `18-spec-vs-implementation-gaps.md`）。
+- 収入か支出かはデータに `type` 列があるわけではなく、**金額の符号** で表しています。支出は入力画面で負の数に変換して送っています（`web-app/src/pages/Input.tsx:32-36`）。つまり `type=income` の絞り込みは「`amount > 0`」に相当する設計で、実装もそのとおり `WHERE amount > 0` / `WHERE amount < 0` を SQL に付け足しています（`backend/src/index.ts:44-49`）。
 
 ## 今後に活かせるポイント
 

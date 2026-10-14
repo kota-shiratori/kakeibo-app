@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: kakeibo-app 学習ノート
-  tagline: 家計簿アプリを作りながら学んだ Hono / React / TypeScript / 設計のまとめ
+  tagline: 家計簿アプリを作りながら学んだ Hono / React / TypeScript / DB / 設計のまとめ
   actions:
     - theme: brand
       text: 設計（Architecture）から読む
@@ -34,4 +34,16 @@ features:
   - title: Tooling
     details: package.json・semver・tsx・Vite・import.meta.env・oxlint
     link: /Tooling/
+  - title: Database
+    details: DB の基本用語・主キーとインデックス・テーブル設計・マイグレーション
+    link: /Database/
+  - title: SQL
+    details: DDL / DML・SELECT と WHERE・AND / OR の優先順位・集計・トランザクション・プレースホルダー
+    link: /SQL/
+  - title: PostgreSQL
+    details: psql・データ型・IDENTITY 列・制約とエラー・node-postgres の型変換・Neon
+    link: /PostgreSQL/
+  - title: Docker
+    details: イメージとコンテナ・docker run・ボリューム（PostgreSQL 18）・docker exec・DATABASE_URL
+    link: /Docker/
 ---

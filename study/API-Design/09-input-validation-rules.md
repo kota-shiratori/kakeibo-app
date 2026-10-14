@@ -18,7 +18,7 @@ API は「誰がどんなデータを送ってくるか分からない」前提�
 
 `POST /transactions` の検証は 3 段階です。
 
-### 1. 必須チェック — `backend/src/index.ts:56-63`
+### 1. 必須チェック — `backend/src/index.ts:81-83`
 
 ```ts
 if (!item || amount === undefined || !date) {
@@ -29,7 +29,7 @@ if (!item || amount === undefined || !date) {
 - `item` と `date` は「falsy（`undefined`, `null`, `""` など）なら不足」と判定。
 - `amount` だけ `=== undefined` で判定しているのは、`!amount` だと **`0` も「不足」扱いになってしまう** ため。0 は次の段階で「金額不正」として別のメッセージを返したい、という意図が読み取れます。
 
-### 2. 金額チェック — `backend/src/index.ts:65-72`
+### 2. 金額チェック — `backend/src/index.ts:85-87`
 
 ```ts
 if (typeof amount !== "number" || amount === 0) {
@@ -37,10 +37,10 @@ if (typeof amount !== "number" || amount === 0) {
 }
 ```
 
-- `typeof amount !== "number"` で `"100"`（文字列）を弾く（curl で確認: `"amount":"100"` は 400）。
+- `typeof amount !== "number"` で `"100"`（文字列）を弾く（実験で確認: `"amount":"100"` は 400）。
 - `amount === 0` で 0 円を弾く。収支は符号で収入（正）・支出（負）を表すので、0 には意味がないという仕様です。
 
-### 3. 日付形式チェック — `backend/src/index.ts:74-81`
+### 3. 日付形式チェック — `backend/src/index.ts:89-91`
 
 ```ts
 if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -49,15 +49,19 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 ```
 
 - `^` と `$` で文字列全体を対象にし、「数字 4 桁 - 数字 2 桁 - 数字 2 桁」だけを通す。
-- **形式しか見ていない** ので、`2025-13-45` のような存在しない日付も通ります（→ `10-date-validation-pitfalls.md`）。
+- **形式しか見ていない** ので、`2025-13-45` のような存在しない日付も通ります。通過した値はそのまま DB の `DATE` 列に INSERT され、そこで PostgreSQL がエラー（`22008`）にするので、API としては **500** が返ります（→ `10-date-validation-pitfalls.md`）。
 
-### 仕様書との対応 — `backend/openapi.yaml:94-118`
+3 つの検証を通過すると、`item` / `amount` / `date` の 3 つだけがプレースホルダーで `INSERT` に渡されます（`backend/src/index.ts:93-96`）。
 
-| 項目 | 仕様書 | 実装 |
-| --- | --- | --- |
-| item | `type: string`, `minLength: 1`, 必須 | `!item` のみ（型チェックなし） |
-| amount | `type: number`, `not: { const: 0 }`, 必須 | `typeof === "number"` かつ `!== 0` |
-| date | `type: string`, `format: date`, `pattern`, 必須 | 正規表現のみ（型チェックなし） |
+### 仕様書・DB との対応 — `backend/openapi.yaml:94-118`
+
+| 項目 | 仕様書 | 実装 | DB の列（`../Database/03-schema-design-for-kakeibo.md`） |
+| --- | --- | --- | --- |
+| item | `type: string`, `minLength: 1`, 必須 | `!item` のみ（型チェックなし） | `VARCHAR(20) NOT NULL` |
+| amount | `type: number`, `not: { const: 0 }`, 必須 | `typeof === "number"` かつ `!== 0` | `INTEGER NOT NULL`（整数・約 ±21 億） |
+| date | `type: string`, `format: date`, `pattern`, 必須 | 正規表現のみ（型チェックなし） | `DATE NOT NULL`（実在する日付のみ） |
+
+**DB の方が仕様書・実装より厳しい** ため、検証を通過した値が DB で拒否されると 500 になります（下の「すり抜け」を参照）。
 
 ### フロント側の補助的な制限 — `web-app/src/pages/Input.tsx`
 
@@ -75,19 +79,30 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 
 ## 仕様・注意点
 
-実際に curl で送って確認した「すり抜け」です。
+現在のコードを実験用の DB（`transactions` テーブルだけを作った使い捨ての DB）につなぎ、`app.request()` で送って確認した「すり抜け」です。
 
-- **`item` の型を見ていない**: `"item": 123` が 201 で通る。仕様書は `type: string`。
-- **`date` の型を見ていない**: `"date": ["2025-01-01"]`（配列）が 201 で通る。`RegExp.prototype.test` は引数を文字列に変換するため、配列 `["2025-01-01"]` は `"2025-01-01"` になって正規表現にマッチしてしまいます。
-- **余分なプロパティがそのまま返る**: `"extra": "x"` を付けると、レスポンスにもそのまま含まれる（`return c.json(body, 201)`、`backend/src/index.ts:83`）。DB 保存時に body をそのまま渡すと、意図しない列を書き換えられる危険（マスアサインメント）につながります。
-- **`item` の上限がない**: フロントは 20 文字制限ですが、サーバーと仕様書には上限がありません。
-- **空白だけの `item`**（`"   "`）は `!item` も `minLength: 1` もすり抜けます。
-- `null` のボディや壊れた JSON は検証より前に例外になり 500 になる（→ `04-http-status-codes.md`）。
+**検証を通過して、そのまま DB に保存されてしまうもの（201）**
+
+- **`item` の型を見ていない**: `"item": 123` → 201 で、DB には文字列 `"123"` として保存された。`true` は `"true"`、配列 `["a"]` は `{"a"}`、オブジェクト `{"a":1}` は `{"a":1}` という文字列で保存された（`pg` が JS の値を SQL に渡す前に文字列化するため）。仕様書は `type: string`。
+- **`date` の型を見ていない**: `"date": ["2025-01-01"]`（配列）→ 201 で、`2025-01-01` として保存された。`RegExp.prototype.test` は引数を文字列に変換するため、配列 `["2025-01-01"]` は `"2025-01-01"` になって正規表現にマッチし、さらに `pg` が配列を `{"2025-01-01"}` という文字列で送り、PostgreSQL の `DATE` の解析もそれを受け入れました（psql で `SELECT '{"2025-01-01"}'::date;` → `2025-01-01` を確認）。
+- **空白だけの `item`**（`"   "`）→ 201 で、空白 3 文字のまま保存された。`!item` も `minLength: 1` もすり抜けます。
+
+**検証を通過したが、DB が拒否して 500 になるもの**
+
+- **`item` の上限がない**: フロントは 20 文字制限ですが、サーバーと仕様書には上限がありません。21 文字を送ると DB の `VARCHAR(20)` が拒否（`22001`）し、500。
+- **存在しない日付**: `2025-13-45`、`2025-02-30` は正規表現を通過し、DB が拒否（`22008`）して 500。
+- **整数でない金額・範囲外の金額**: `1.5`、`2147483648` は DB の `INTEGER` が拒否（`22P02` / `22003`）して 500。
+
+**検証より前に例外になり 500 になるもの**
+
+- `null` のボディや壊れた JSON（→ `04-http-status-codes.md`）。
+
+**以前のバージョンからの変化**: 以前は `return c.json(body, 201)` で受け取ったボディをそのまま返していたため、`"extra": "x"` のような余分なプロパティもレスポンスに含まれていました。現在は `INSERT ... RETURNING` の結果から組み立てた値を返すので（`backend/src/index.ts:98-105`）、`{"item":"x","amount":5,"date":"2025-10-02","id":999,"extra":"y"}` を送っても、レスポンスは `{"id":9,"item":"x","amount":5,"date":"2025-10-02"}` でした（`id: 999` も無視され、DB が採番した値になる）。INSERT に渡す値を `item` / `amount` / `date` の 3 つに限定しているので、意図しない列を書き換えられる危険（マスアサインメント）も今のところありません。
 
 その他の注意:
 
-- 金額の上限がないため、`1e300` のような極端な値も通ります。
-- JSON では `NaN` や `Infinity` を直接書けませんが、`1e400` のように範囲外の数値リテラルは `JSON.parse` で `Infinity` になります。`typeof Infinity === "number"` かつ `0` でもないので、`{"item":"a","amount":1e400,"date":"2025-01-01"}` は現在の検証を通過し、201 のレスポンスでは `JSON.stringify` により `"amount":null` に化けます（Hono 4.13.13 で再現を確認）。有限数に限定するなら `Number.isFinite(amount)` で確認します（Zod 4 の `z.number()` は `Infinity` を拒否します）。
+- 金額の上限がないため、`1e300` のような極端な値も検証は通ります。現在は DB の `INTEGER` が拒否する（`pg` が `"1e+300"` という文字列で送り、`22P02`）ので保存はされず、500 になります。
+- JSON では `NaN` や `Infinity` を直接書けませんが、`1e400` のように範囲外の数値リテラルは `JSON.parse` で `Infinity` になります。`typeof Infinity === "number"` かつ `0` でもないので、`{"item":"a","amount":1e400,"date":"2025-01-01"}` は現在の検証を通過し、DB に `"Infinity"` として送られて拒否（`22P02`）され、500 になります（実験で確認）。有限の整数に限定するなら `Number.isInteger(amount)` で確認します（Zod 4 の `z.number()` は `Infinity` を拒否し、`.int()` で整数に限定できます）。
 
 ## 今後に活かせるポイント
 
@@ -104,7 +119,12 @@ import { z } from "zod";
 const TransactionInput = z.object({
   item: z.string().trim().min(1).max(20),
   // Zod 4 ではエラーメッセージは `error` で指定する（`message` は非推奨）
-  amount: z.number().refine((n) => n !== 0, { error: "金額は0以外の数値である必要があります。" }),
+  amount: z
+    .number()
+    .int() // DB の列が INTEGER なので整数に限定
+    .min(-2147483648)
+    .max(2147483647)
+    .refine((n) => n !== 0, { error: "金額は0以外の数値である必要があります。" }),
   date: z.iso.date(), // 実在する日付のみ（2025-13-45 や 2025-02-30 は NG）
 });
 // z.object は既定で未知のキーを取り除く（strip）ので、extra は結果に含まれない
@@ -116,7 +136,7 @@ app.post("/transactions", async (c) => {
     return c.json({ message: result.error.issues[0]?.message ?? "入力が不正です。" }, 400);
   }
   const input = result.data; // { item: string; amount: number; date: string } 型
-  // ...保存処理
+  // ...INSERT（backend/src/index.ts:93-96 と同じ）
 });
 ```
 

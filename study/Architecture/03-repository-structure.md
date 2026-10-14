@@ -12,13 +12,14 @@ kakeibo-app は 1 つの Git リポジトリの中に `backend/` と `web-app/` 
 kakeibo-app/                 ← Git リポジトリのルート（package.json なし）
 ├── backend/                 ← API サーバー（独立した npm パッケージ）
 │   ├── src/
-│   │   ├── index.ts         ← サーバー本体（全ルートがここ）
+│   │   ├── index.ts         ← アプリ本体（DB 接続・全ルート。app を export。Vercel のエントリ）
+│   │   ├── dev.ts           ← ローカル起動用（dotenv + serve）
 │   │   └── env.ts           ← 環境変数の検証
 │   ├── openapi.yaml         ← API 仕様書
 │   ├── package.json / package-lock.json
 │   ├── pnpm-workspace.yaml  ← pnpm 用設定（esbuild のビルド許可のみ）
 │   ├── tsconfig.json
-│   └── .env                 ← FRONTEND_URL（.gitignore 済み）
+│   └── .env                 ← FRONTEND_URL / DATABASE_URL（.gitignore 済み）
 ├── web-app/                 ← フロントエンド（独立した npm パッケージ）
 │   ├── index.html
 │   ├── src/
@@ -37,11 +38,10 @@ kakeibo-app/                 ← Git リポジトリのルート（package.json 
 それぞれの `package.json` が別々の依存関係とスクリプトを持ちます。
 
 ```json
-// backend/package.json:4-8
+// backend/package.json:4-7
 "scripts": {
-  "dev": "tsx watch src/index.ts",
-  "build": "tsc",
-  "start": "node dist/index.js"
+  "dev": "tsx watch src/dev.ts",
+  "typecheck": "tsc --noEmit"
 }
 ```
 
@@ -56,9 +56,11 @@ kakeibo-app/                 ← Git リポジトリのルート（package.json 
 }
 ```
 
-開発時はターミナルを 2 つ開き、それぞれのディレクトリで `npm run dev` を実行します。
+開発時は DB コンテナを起動したうえで（`docker start kakeibo-postgres`、`../Docker/06-container-lifecycle-and-troubleshooting.md`）、ターミナルを 2 つ開き、それぞれのディレクトリで `npm run dev` を実行します。
 
-TypeScript のバージョンも別々です（`backend/package.json:19` は `^7.0.2`、`web-app/package.json:27` は `~6.0.2`）。独立パッケージなので、こうした違いが許容されます。
+backend には `build` / `start` がありません。本番は Vercel が `src/index.ts` の `export default app` を直接関数として扱うため、ビルド成果物（`dist/`）を自分で起動する必要がないからです（コミット `b00677a` で `build` を型チェックだけの `typecheck` に変更）。
+
+TypeScript のバージョンはパッケージごとに指定します。以前は backend だけ `^7.0.2` でしたが、Vercel のビルドで TS 7 が `@types/node` を解決できなかったため、コミット `05cd00a` で `~6.0.2` に揃えました（`backend/package.json:21`、`web-app/package.json:27`）。独立パッケージなので別々のバージョンにすることも可能ですが、その分こうした環境差の問題も個別に抱えます。
 
 ## 重要語句
 
@@ -71,7 +73,7 @@ TypeScript のバージョンも別々です（`backend/package.json:19` は `^7
 
 - **型やコードの共有手段がない**: `web-app/src/hooks/transactions.ts` の `Transaction` 型と、バックエンドが返す JSON の形は、人間が手で揃えています（`14-api-contract-and-types.md`）。
 - **パッケージマネージャーの混在**: `backend/` には npm の `package-lock.json` と pnpm 用の `pnpm-workspace.yaml` が同居しています。`pnpm-workspace.yaml` の中身は esbuild のビルドスクリプト許可（`onlyBuiltDependencies` / `allowBuilds`）だけで、workspace としては使われていません。どちらか一方に統一したほうが混乱がありません。
-- `backend/package.json:2` の `"name": "backend "` は末尾に空白が入っています（npm に公開しないので実害は小さいですが、修正しておくのが無難）。
+- 以前は `backend/package.json` の `"name"` が `"backend "`（末尾に空白）でしたが、現在は `"backend"`（2 行目）に修正済みです。
 - **`.env` の Git 管理**: 当初は `backend/.gitignore` だけが `.env` を除外し、`web-app/.gitignore` には `.env` の行がありませんでした（`*.local` のみ）。2026-10-12 に修正済みで、現在は `backend/.gitignore:18` と `web-app/.gitignore:16` の両方で `.env` を除外しています（同日に `backend/.gitignore:15` へ `dist/` も追加）。`VITE_` 付きの変数はどのみちブラウザに配信される公開値ですが、「環境ごとの値をコミットするか」は方針として決めておくべきです（`13-configuration-externalization.md`）。
 - リポジトリ全体を対象にした共通の lint / format / CI 設定もまだありません。
 

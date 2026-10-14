@@ -1,27 +1,37 @@
-# 開発時の起動手順（backend と web-app を別ターミナルで起動）
+# 開発時の起動手順（PostgreSQL・backend・web-app を起動）
 
 ## 概要
 
-このプロジェクトは **2 つの独立したアプリ**から成ります。
+このプロジェクトは **2 つの独立したアプリ** と、データを保存する **PostgreSQL** から成ります。
 
-| | backend | web-app |
-| --- | --- | --- |
-| 役割 | API サーバ（Hono） | 画面（React） |
-| 起動コマンド | `npm run dev`（tsx watch） | `npm run dev`（vite） |
-| URL | `http://localhost:3000` | `http://localhost:5173`（Vite のデフォルト） |
-| 環境変数 | `backend/.env` の `FRONTEND_URL` | `web-app/.env` の `VITE_API_BASE_URL` |
+| | PostgreSQL | backend | web-app |
+| --- | --- | --- | --- |
+| 役割 | データの保存 | API サーバ（Hono） | 画面（React） |
+| 起動方法 | Docker のコンテナ `kakeibo-postgres`（`docker start`） | `npm run dev`（tsx watch、エントリは `src/dev.ts`） | `npm run dev`（vite） |
+| URL / 接続先 | `localhost:5432` | `http://localhost:3000` | `http://localhost:5173`（Vite のデフォルト） |
+| 環境変数 | （コンテナ作成時の `POSTGRES_PASSWORD`） | `backend/.env` の `FRONTEND_URL` と `DATABASE_URL` | `web-app/.env` の `VITE_API_BASE_URL` |
 
-どちらも**起動したまま動き続ける（ファイルを監視する）プロセス**なので、ターミナルを 2 つ開いて、それぞれで起動します。
+backend と web-app は**起動したまま動き続ける（ファイルを監視する）プロセス**なので、ターミナルを 2 つ開いて、それぞれで起動します。PostgreSQL は `-d`（バックグラウンド）で動かすので、ターミナルを占有しません。
+
+起動順は **PostgreSQL → backend → web-app** です。backend は起動時に環境変数を検証し、リクエストのたびに DB に接続します。
 
 ## このプロジェクトでの実装
 
 ### 初回セットアップ
 
 ```sh
+# 0. PostgreSQL（初回だけ。詳しくは ../Docker/）
+docker run --name kakeibo-postgres -e POSTGRES_PASSWORD=<password> -p 5432:5432 \
+  -v kakeibo-postgres-data:/var/lib/postgresql -d postgres:18.3
+docker exec -it kakeibo-postgres psql -U postgres -c "CREATE DATABASE kakeibo_db;"
+# kakeibo_db に transactions テーブルを作る（../SQL/03-create-database-and-table.md）
+
 # ターミナル 1
 cd backend
 npm install
-# backend/.env を用意（キー: FRONTEND_URL。web-app の URL を設定する）
+# backend/.env を用意
+#   FRONTEND_URL … web-app の URL
+#   DATABASE_URL … postgresql://postgres:<password>@localhost:5432/kakeibo_db
 
 # ターミナル 2
 cd web-app
@@ -35,10 +45,13 @@ npm install
 ### 毎日の起動
 
 ```sh
+# 0. DB コンテナが止まっていれば起動（Mac や Docker Desktop の再起動後は止まっている）
+docker start kakeibo-postgres
+
 # ターミナル 1: backend
 cd backend
 npm run dev
-# → "Server is running on http://localhost:3000"（backend/src/index.ts:92）
+# → "Server is running on http://localhost:3000"（backend/src/dev.ts:7）
 
 # ターミナル 2: web-app
 cd web-app
@@ -52,18 +65,22 @@ npm run dev
 
 ```
 web-app/.env                       backend/.env
-VITE_API_BASE_URL ──(呼び出し先)──▶ backend :3000 (backend/src/index.ts:89)
+VITE_API_BASE_URL ──(呼び出し先)──▶ backend :3000 (backend/src/dev.ts:6)
                                    FRONTEND_URL ──(CORS で許可)──▶ web-app :5173
+                                   DATABASE_URL ──(接続先)──▶ PostgreSQL :5432（Docker）
 ```
 
-- `VITE_API_BASE_URL` は backend のポート（`backend/src/index.ts:89` の `3000`）と一致している必要がある。
-- `FRONTEND_URL` は Vite の開発サーバの URL と一致している必要がある（`backend/src/index.ts:11` で CORS の `origin` に使用。CORS の詳細は study/API-Design）。
+- `VITE_API_BASE_URL` は backend のポート（`backend/src/dev.ts:6` の `3000`）と一致している必要がある。
+- `FRONTEND_URL` は Vite の開発サーバの URL と一致している必要がある（`backend/src/index.ts:15` で CORS の `origin` に使用。CORS の詳細は study/API-Design）。
+- `DATABASE_URL` のポート・パスワード・DB 名は Docker のコンテナ作成時の設定と一致している必要がある（`backend/src/index.ts:7` で `Pool` に渡す。`../Docker/08-connecting-backend-to-local-db.md`）。
 
 ### よくあるトラブル
 
 | 症状 | 原因と対処 |
 | --- | --- |
-| backend 起動時に環境変数のエラー | `backend/.env` がない、または `backend/` 以外のディレクトリで起動した（`dotenv.config()` はカレントディレクトリの `.env` を読む。`backend/src/env.ts:5`）。`@t3-oss/env-core` が `FRONTEND_URL` を検証して起動を止める（`backend/src/env.ts:7-12`） |
+| backend 起動時に `Invalid environment variables` | `backend/.env` がない、キーが足りない、または `backend/` 以外のディレクトリで起動した（`dotenv/config` はカレントディレクトリの `.env` を読む。`backend/src/dev.ts:2`）。`@t3-oss/env-core` が `FRONTEND_URL` と `DATABASE_URL` を検証して起動を止める（`backend/src/env.ts:4-10`）。**2026-10-14 時点の `backend/.env` には `DATABASE_URL` がなく、実際に `path: [ 'DATABASE_URL' ]` のエラーで止まることを確認した** |
+| API が 500 を返し、backend に `ECONNREFUSED 127.0.0.1:5432` | DB コンテナが止まっている。`docker start kakeibo-postgres`（`../Docker/06-container-lifecycle-and-troubleshooting.md`） |
+| `password authentication failed` / `database "kakeibo_db" does not exist` / `relation "transactions" does not exist` | `DATABASE_URL` のパスワード・DB 名の誤り、または DB・テーブルを作っていない（`../Docker/08-connecting-backend-to-local-db.md`） |
 | ブラウザのコンソールに CORS エラー | web-app が 5173 以外のポートで起動した（5173 が使用中だと Vite は自動で 5174 などに移る）。`FRONTEND_URL` と実際の URL が一致しているか確認 |
 | API の URL が `undefined` | `web-app/.env` のキー名に `VITE_` が付いていない、または `.env` を変えた後に Vite を再起動していない |
 | `EADDRINUSE: address already in use :::3000` | 前回の backend が残っている。そのターミナルで Ctrl+C、または `lsof -i :3000` でプロセスを探して終了 |
@@ -77,7 +94,7 @@ npm run lint     # oxlint
 npm run build    # 型チェック（tsc -b）+ ビルド
 
 cd ../backend
-npx tsc --noEmit # 型チェックのみ（dist を作らない）
+npm run typecheck # tsc --noEmit（型チェックのみ）
 ```
 
 ## 重要語句
@@ -89,7 +106,7 @@ npx tsc --noEmit # 型チェックのみ（dist を作らない）
 
 ## 仕様・注意点
 
-- `backend/README.md:1-8` には `npm install` / `npm run dev` / `open http://localhost:3000` しか書かれておらず、web-app との連携や `.env` の準備は書かれていません。`web-app/README.md` は Vite テンプレートの説明のままです。
+- `backend/README.md:1-8` には `npm install` / `npm run dev` / `open http://localhost:3000` しか書かれておらず、web-app との連携、`.env` の準備、PostgreSQL（Docker）の起動は書かれていません。`web-app/README.md` は Vite テンプレートの説明のままです。
 - backend の `tsx watch` は `.env` の変更で再起動しないことがあるので、`.env` を変えたら手動で再起動する（[08](./08-tsx-dev-runtime.md)）。web-app の Vite も `.env` 変更後は再起動が必要。
 - Vite は 5173 が使用中だと**自動で別のポートを使う**ため、気づかないうちに CORS エラーになることがあります。`server.strictPort: true` で防げます（[14](./14-vite-config-plugin-react.md)）。
 
@@ -118,5 +135,5 @@ npx tsc --noEmit # 型チェックのみ（dist を作らない）
 ## 次に学ぶこと
 
 - `concurrently` / `npm-run-all2` による複数プロセスの同時起動
-- Docker Compose で backend・web-app（将来は DB も）をまとめて起動
+- Docker Compose で PostgreSQL（将来は backend・web-app も）をまとめて起動（`../Docker/03-docker-run-options.md` に `compose.yaml` の例）
 - GitHub Actions で lint・型チェック・ビルドを自動実行する CI

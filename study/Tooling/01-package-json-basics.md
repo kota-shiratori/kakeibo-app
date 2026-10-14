@@ -42,18 +42,18 @@
 ### backend/package.json（Hono のテンプレート由来）
 
 ```json
-// backend/package.json:1-8
+// backend/package.json:1-7
 {
-  "name": "backend ",
+  "name": "backend",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
+    "dev": "tsx watch src/dev.ts",
+    "typecheck": "tsc --noEmit"
   },
 ```
 
-- `backend/package.json:2` の `"name": "backend "` は **末尾に半角スペースが入っています**。`backend/package-lock.json:2` と `:7` にもそのままコピーされています。
+- 以前は `"name": "backend "` と **末尾に半角スペースが入っていました**（`package-lock.json` の `name` にもコピーされていた）。現在は `backend/package.json:2`、`backend/package-lock.json:2` / `:7` とも `"backend"` に直っています。
+- `scripts` は以前の `dev` / `build` / `start`（`tsc` でビルドして `node dist/index.js` で起動）から、`dev`（`src/dev.ts`）と `typecheck` に変わりました。本番は Vercel Functions で動かすためです（[09](./09-backend-build-and-start.md)）。
 - `private` と `version` がありません。公開する予定がないなら `private: true` を付けるのが安全です。
 
 ## 重要語句
@@ -78,15 +78,15 @@
 
 ## 改善するなら
 
-1. backend の名前の末尾スペースを削除し、`private` を追加する。
+1. backend に `private` を追加する（名前の末尾スペースは修正済み）。
    ```json
    {
-     "name": "kakeibo-backend",
+     "name": "backend",
      "private": true,
      "version": "0.0.0",
      "type": "module",
    ```
-   変更後は `npm install` を実行して `package-lock.json` 側の `name` も更新させる。
+   名前を変える場合は、変更後に `npm install` を実行して `package-lock.json` 側の `name` も更新させる。
 2. 両方に `engines` を書いて、想定する Node.js のバージョンを明示する（Vite 8 の要求は `^20.19.0 || >=22.12.0`。`web-app/node_modules/vite/package.json` の `engines` で確認できる）。
    ```json
    "engines": { "node": ">=22.12.0" }

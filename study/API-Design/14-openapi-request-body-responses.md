@@ -70,7 +70,7 @@ responses:
             $ref: "#/components/examples/InvalidDateError"
 ```
 
-400 のように **1 つのステータスに複数の原因がある** 場合、`examples` に名前付きで複数の例を並べると、どんなエラーがあり得るかがドキュメント上で一目で分かります。これは実装の 3 つの 400（`backend/src/index.ts:56-81`）と 1 対 1 に対応しています。
+400 のように **1 つのステータスに複数の原因がある** 場合、`examples` に名前付きで複数の例を並べると、どんなエラーがあり得るかがドキュメント上で一目で分かります。これは実装の 3 つの 400（`backend/src/index.ts:81-91`）と 1 対 1 に対応しています。
 
 ## 重要語句
 
@@ -85,8 +85,8 @@ responses:
 - **Response Object の `description` は必須** です。省略すると仕様違反になります。
 - ステータスコードは `"4XX"` のように範囲指定もできます（大文字の `X`）。個別指定（`"400"`）があればそちらが優先されます。
 - `example`（単数、値を直接書く）と `examples`（複数、名前付きの Example Object）は同時に使えません。
-- POST の 201 のスキーマが `TransactionInput`（**`id` なし**）になっています。これは「受け取った内容をそのまま返す」という現在の実装（`backend/src/index.ts:83`）には合っていますが、通常「作成された」リソースには ID が採番されて返るべきです。フロントでも `id` のない型 `NewTransaction = Omit<Transaction, "id">` を送信用に使い分けています（`web-app/src/hooks/transactions.ts:21`）。
-- 仕様書には 500 レスポンスがありませんが、実装は壊れた JSON などで 500（`text/plain`）を返します（→ `18-spec-vs-implementation-gaps.md`）。
+- POST の 201 のスキーマが `TransactionInput`（**`id` なし**）のままです。以前の「受け取った内容をそのまま返す」実装には合っていましたが、現在の実装は DB に `INSERT ... RETURNING` し、**採番された `id` 付きの行** を返します（`backend/src/index.ts:93-105`。実験では `{"id":1,"item":"給料","amount":10000,"date":"2025-10-01"}`）。つまり **今は仕様が実装に追いついていません**。通常「作成された」リソースには ID が採番されて返るべきなので、直すべきは仕様側です。フロントでも `id` のない型 `NewTransaction = Omit<Transaction, "id">` を送信用に使い分けています（`web-app/src/hooks/transactions.ts:21`）。
+- 仕様書には 500 レスポンスがありませんが、実装は壊れた JSON、DB の制約違反（21 文字の `item` など）、DB 接続失敗などで 500（`text/plain`）を返します（→ `18-spec-vs-implementation-gaps.md`）。
 
 ## 今後に活かせるポイント
 
@@ -95,7 +95,7 @@ responses:
 
 ## 改善するなら
 
-DB 保存を実装したら、201 で `Transaction`（`id` 付き）を返すようにし、仕様もそれに合わせます。想定外エラーは `default` で定義します。
+実装はすでに 201 で `Transaction`（`id` 付き）を返しているので、仕様をそれに合わせます。想定外エラーは `default` で定義します。
 
 ```yaml
 responses:

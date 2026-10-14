@@ -12,13 +12,10 @@ API がエラーを返すとき、**ボディの形をすべてのエラーで�
 
 ### 実装側: すべての 400 が `{ message }`
 
-`backend/src/index.ts:22-27`, `:57-62`, `:66-71`, `:75-80` のどれも同じ形です。
+`backend/src/index.ts:33-38`, `:82`, `:86`, `:90` のどれも同じ形です。
 
 ```ts
-return c.json(
-  { message: "金額は0以外の数値である必要があります。" },
-  400,
-);
+return c.json({ message: "金額は0以外の数値である必要があります。" }, 400);
 ```
 
 ### 仕様側: `ErrorResponse` スキーマを共通化
@@ -68,7 +65,7 @@ if (!response.ok) {
 
 ## 仕様・注意点
 
-- エラーの形が統一されていても、**例外的な経路で別の形が返る** ことがあります。このプロジェクトでは、壊れた JSON を送ると Hono 既定のエラーハンドラが `text/plain` で `Internal Server Error` を返します（`backend/node_modules/hono/dist/hono-base.js:14-21`、curl で確認済み）。クライアントが `response.json()` しようとすると失敗するので注意。
+- エラーの形が統一されていても、**例外的な経路で別の形が返る** ことがあります。このプロジェクトでは、壊れた JSON を送ったとき、また DB への INSERT が制約違反（21 文字の `item`、`2025-02-30` の日付など）で失敗したときや DB に接続できないときに、Hono 既定のエラーハンドラが `text/plain` で `Internal Server Error` を返します（`backend/node_modules/hono/dist/hono-base.js:14-21`、`app.request()` で確認済み）。クライアントが `response.json()` しようとすると失敗するので注意。
 - 同様に、存在しないパスへのアクセスは Hono 既定の `404 Not Found`（text/plain）になります（`backend/node_modules/hono/dist/hono-base.js:11-13`）。
 - `message` は人間向けの文言です。プログラムで分岐したい場合（「日付エラーならこの入力欄を赤くする」など）は、**機械向けのコード**（例: `code: "INVALID_DATE"`）や **どの項目か**（`field: "date"`）があると便利です。
 - エラーメッセージにスタックトレースや SQL などの内部情報を含めてはいけません（攻撃のヒントになる）。

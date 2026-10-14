@@ -14,7 +14,7 @@ URL の `?` 以降（クエリ文字列）は、一覧の絞り込みや検索�
 const response = await fetch(`${BASE_URL}/transactions?type=expense`);
 ```
 
-バックエンドでの受け取り: `backend/src/index.ts:19-28`
+バックエンドでの受け取り: `backend/src/index.ts:30-39`
 
 ```ts
 const type = c.req.query("type");
@@ -29,10 +29,25 @@ if (!type || !["income", "expense", "all"].includes(type)) {
 }
 ```
 
-- 19 行目: `type` の値を文字列で取得。指定がなければ `undefined`
-- 21 行目: 未指定、または許可された 3 値以外なら 400 を返す（手書きバリデーション → 11 章）
+- 30 行目: `type` の値を文字列で取得。指定がなければ `undefined`
+- 32 行目: 未指定、または許可された 3 値以外なら 400 を返す（手書きバリデーション → 11 章）
 
-ただし現状、`type` を検証したあと **その値で絞り込む処理はまだありません**（30-37 行目は固定のダミーデータ）。
+検証した `type` は、SQL の `WHERE` 句の組み立てに使われます（`backend/src/index.ts:41-51`）。
+
+```ts
+let historyQuery = `SELECT id, item, amount, date FROM transactions`;
+let countQuery = `SELECT COUNT(*) as total FROM transactions`;
+
+if (type === "income" || type === "expense") {
+  const addTypeQuery =
+    type === "income" ? ` WHERE amount > 0` : ` WHERE amount < 0`;
+  historyQuery += addTypeQuery;
+  countQuery += addTypeQuery;
+}
+```
+
+- `income` → 金額が正の行、`expense` → 負の行、`all` → 絞り込みなし。
+- SQL に連結しているのは **固定の文字列だけ** で、クエリの値そのものは SQL に入りません。だからこの文字列連結は SQL インジェクションにはなりません（`../SQL/11-placeholders-and-sql-injection.md`）。先に 3 値に検証しているからこそ安全に書ける形です。
 
 ## 重要語句
 
@@ -63,8 +78,7 @@ const isTxType = (v: string | undefined): v is TxType =>
 
 ## 改善するなら
 
-1. 検証した `type` を実際に使ってフィルタする。
-2. スキーマバリデーション（Hono 組み込みの `validator` や `@hono/zod-validator`）を使い、型も自動で付ける。
+1. スキーマバリデーション（Hono 組み込みの `validator` や `@hono/zod-validator`）を使い、型も自動で付ける。
 
 ```ts
 import { zValidator } from "@hono/zod-validator"; // 別途インストールが必要
@@ -75,8 +89,9 @@ app.get(
   zValidator("query", z.object({ type: z.enum(["income", "expense", "all"]) })),
   (c) => {
     const { type } = c.req.valid("query"); // "income" | "expense" | "all" 型
-    const list = type === "all" ? all : all.filter((t) => t.type === type);
-    return c.json({ transactions: list }, 200);
+    // type はリテラル型なので、WHERE 句の対応表も型安全に引ける
+    const where = { income: " WHERE amount > 0", expense: " WHERE amount < 0", all: "" }[type];
+    // ... pool.query(`SELECT ... FROM transactions${where} ORDER BY date DESC`)
   },
 );
 ```

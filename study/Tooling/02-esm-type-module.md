@@ -29,19 +29,27 @@ Node.js は、`package.json` の `"type"` フィールドで `.js` ファイル�
 ### backend: 相対 import に `.js` が付いている理由
 
 ```ts
-// backend/src/index.ts:1-4
-import { serve } from "@hono/node-server";
+// backend/src/index.ts:1-5
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { attachDatabasePool } from "@vercel/functions";
+import { Pool } from "pg";
 import { env } from "./env.js";
 ```
 
-実体は `src/env.ts` なのに `./env.js` と書いています。これは
+```ts
+// backend/src/dev.ts:2-4
+import "dotenv/config";
+import { serve } from "@hono/node-server";
+import app from "./index.js";
+```
 
-1. `tsc` でビルドすると `dist/env.js` が出力され、
-2. `node dist/index.js` で動かすとき、**Node.js の ESM は拡張子の省略を許さない**
+実体は `src/env.ts` / `src/index.ts` なのに `./env.js` / `./index.js` と書いています。これは
 
-ためです。TypeScript は「ビルド後の名前（`.js`）」で書くことを要求し、`backend/tsconfig.json:4` の `"module": "NodeNext"` がこのルールを型チェックで強制します（オプションの詳細は study/TypeScript を参照）。開発時の `tsx` も `./env.js` を `./env.ts` に読み替えて実行してくれます。
+1. TypeScript を JS に変換すると `env.js` / `index.js` という名前のファイルになり、
+2. 変換後の JS を Node.js の ESM として動かすとき、**Node.js の ESM は拡張子の省略を許さない**
+
+ためです（現在は `tsc` で `dist/` を出力する運用はしていませんが、Vercel Functions も最終的に JS を Node.js で実行するので、ルールは同じです）。TypeScript は「ビルド後の名前（`.js`）」で書くことを要求し、`backend/tsconfig.json:4` の `"module": "NodeNext"` がこのルールを型チェックで強制します（オプションの詳細は study/TypeScript を参照）。開発時の `tsx` も `./env.js` を `./env.ts` に読み替えて実行してくれます。
 
 ### web-app: 拡張子なしで書ける理由
 
@@ -73,7 +81,7 @@ import { defineConfig } from "vite";
 
 - ESM では CJS にあった `__dirname` / `__filename` / `require` がそのままでは使えません。代わりに `import.meta.dirname`（Node.js 20.11+ / 21.2+）や `import.meta.url` を使います。
 - ESM から CJS パッケージを `import` することは基本的に可能ですが、逆（CJS から ESM を `require`）は Node.js のバージョンによって制約があります。
-- backend で `./env` のように拡張子を省くと、`tsx` では動いてしまうことがあっても、`tsc` が `NodeNext` 設定でエラーにし、ビルド後の `node dist/index.js` でも失敗します。**「開発では動くのに本番で動かない」典型例**なので注意。
+- backend で `./env` のように拡張子を省くと、`tsx` では動いてしまうことがあっても、`npm run typecheck`（`tsc --noEmit`）が `NodeNext` 設定でエラーにし、変換後の JS を Node.js で実行したときにも失敗します。**「開発では動くのに本番で動かない」典型例**なので注意。
 
 ## 今後に活かせるポイント
 

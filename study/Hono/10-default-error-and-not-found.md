@@ -24,16 +24,22 @@ const errorHandler = (err, c) => {
 };
 ```
 
-このプロジェクトで実際に既定ハンドラに落ちるケース（`app.request()` で実験して確認）:
+このプロジェクトで実際に既定ハンドラに落ちるケース（現在の `index.ts` を `app.request()` で呼び出して確認。DB は使い捨てのデータベースを使用）:
 
 | リクエスト | 何が起きるか | レスポンス |
 | --- | --- | --- |
-| `GET /`（ルート未定義） | notFound | 404 `404 Not Found`（text/plain） |
+| `GET /`（ルート未定義） | notFound | 404 `404 Not Found`（`text/plain; charset=UTF-8`） |
 | `GET /transactions/`（末尾スラッシュ） | notFound | 404（text/plain） |
-| `POST /transactions` に `{bad`（不正 JSON） | `backend/src/index.ts:52` の `c.req.json()` が `SyntaxError` | 500 `Internal Server Error`（text/plain） |
-| `POST /transactions` に `null` | `backend/src/index.ts:54` の分割代入で `TypeError` | 500（text/plain） |
+| `POST /transactions` に `{bad`（不正 JSON） | `backend/src/index.ts:78` の `c.req.json()` が `SyntaxError` | 500 `Internal Server Error`（text/plain） |
+| `POST /transactions` に `null` | `backend/src/index.ts:79` の分割代入で `TypeError` | 500（text/plain） |
+| `POST` で `item` が 21 文字 | `pool.query` が `22001 value too long for type character varying(20)` で reject | 500（text/plain） |
+| `POST` で `amount` が `1.5` | `pool.query` が `22P02 invalid input syntax for type integer` で reject | 500（text/plain） |
+| `POST` で `date` が `2025-02-30` | `pool.query` が `22008 date/time field value out of range` で reject | 500（text/plain） |
+| DB に接続できない（コンテナ停止中など）状態で `GET /transactions?type=all` | `pool.query` が `connect ECONNREFUSED` で reject | 500（text/plain） |
 
-いずれも CORS ミドルウェアは先に通っているので、CORS ヘッダは付いていました。
+いずれも CORS ミドルウェアは先に通っているので、CORS ヘッダは付いていました。既定のエラーハンドラは `console.error(err)` するので、サーバーのコンソールには `pg` のエラー（`code: '22001'` などの詳細付き）がそのまま出ます。
+
+DB の制約違反は、本来は利用者の入力ミス（400）です。backend の検証が DB の型・制約（`VARCHAR(20)`・`INTEGER`・実在する日付）より緩いため、DB まで届いてから 500 になっています（11 章、`../Database/03-schema-design-for-kakeibo.md`、`../PostgreSQL/05-constraints-and-errors.md`）。
 
 ## 重要語句
 
@@ -74,7 +80,10 @@ app.onError((err, c) => {
 
 ## 改善するなら
 
-不正 JSON（クライアントのミス）が 500（サーバーのミス扱い）になっているのが一番の問題です。`onError` で `SyntaxError` を 400 に変換する、または 05 章のように `c.req.json()` を try/catch するのが改善策です。
+不正 JSON や DB の制約違反（どちらもクライアントのミス）が 500（サーバーのミス扱い）になっているのが一番の問題です。
+
+- 不正 JSON：`onError` で `SyntaxError` を 400 に変換する、または 05 章のように `c.req.json()` を try/catch する
+- DB の制約違反：まず入力検証を DB の制約に揃えて DB まで届かないようにする（11 章）。そのうえで、念のため `pg` のエラーの `code`（SQLSTATE）を見て、`22xxx`（データの例外）・`23xxx`（制約違反）を 400 に変換する手もあります
 
 ```ts
 app.onError((err, c) => {
@@ -84,10 +93,16 @@ app.onError((err, c) => {
   if (err instanceof SyntaxError) {
     return c.json({ message: "JSONの形式が不正です。" }, 400);
   }
+  // pg の DatabaseError は SQLSTATE を code に持つ（22001 / 22P02 / 22008 / 23502 など）
+  if (err instanceof DatabaseError && /^2[23]/.test(err.code ?? "")) {
+    return c.json({ message: "入力値が不正です。" }, 400);
+  }
   console.error(err);
   return c.json({ message: "Internal Server Error" }, 500);
 });
 ```
+
+（`DatabaseError` は `import { DatabaseError } from "pg"` で取り込めます。接続エラー `ECONNREFUSED` は `DatabaseError` ではないので 500 のままになり、これはサーバー側の障害なので正しい扱いです。）
 
 ※ `SyntaxError` を一律 400 にすると、サーバー側コードのバグ由来の SyntaxError（例: 外部 API レスポンスのパース失敗）まで 400 になってしまう点には注意。本来は JSON パース箇所で個別に処理する方が正確です。
 

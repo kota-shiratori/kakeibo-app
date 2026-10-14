@@ -1,6 +1,6 @@
 # Tooling 学習ノート（開発ツール・ビルド・パッケージ管理）
 
-家計簿アプリ（kakeibo-app）の `backend/`（Hono + tsx + TypeScript 7）と `web-app/`（React + Vite 8 + oxlint + TypeScript 6）のコードを題材に、開発ツールまわりで学べることをまとめたノートです。番号順に読むと理解しやすい構成になっています。
+家計簿アプリ（kakeibo-app）の `backend/`（Hono + tsx + TypeScript 6 + pg。本番は Vercel Functions）と `web-app/`（React + Vite 8 + oxlint + TypeScript 6）のコードを題材に、開発ツールまわりで学べることをまとめたノートです。番号順に読むと理解しやすい構成になっています。
 
 > tsconfig の各オプションの意味は study/TypeScript、CORS・環境変数の設計論は study/API-Design を参照してください。このフォルダではビルドフローやツールの仕組みに絞っています。
 
@@ -10,20 +10,20 @@
 
 | # | ノート | 内容 |
 | --- | --- | --- |
-| 01 | [package.json の基本](./01-package-json-basics.md) | name / private / version / scripts など各フィールドの意味。backend の名前の末尾スペース問題 |
+| 01 | [package.json の基本](./01-package-json-basics.md) | name / private / version / scripts など各フィールドの意味。backend の名前の末尾スペース問題（修正済み） |
 | 02 | ["type": "module" と ESM](./02-esm-type-module.md) | ESM と CommonJS の違い。backend の import に `.js` が付き、web-app では不要な理由 |
-| 03 | [dependencies と devDependencies の違い](./03-dependencies-vs-devdependencies.md) | 実行時依存と開発時依存の分け方。フロントエンドではバンドルされる点、`@types/node` のバージョン不一致 |
-| 04 | [セマンティックバージョニングと ^ / ~ の違い](./04-semver-caret-tilde.md) | SemVer の意味、`^` と `~` の範囲、TypeScript だけ `~6.0.2` になっている理由、`0.x` の特例 |
-| 05 | [npm scripts](./05-npm-scripts.md) | dev / build / start / lint / preview がそれぞれ何をするか。`&&`、引数の渡し方、終了コード |
+| 03 | [dependencies と devDependencies の違い](./03-dependencies-vs-devdependencies.md) | 実行時依存と開発時依存の分け方。フロントエンドではバンドルされる点、`@types/node` のバージョン不一致、DB 関連の依存（`pg` / `@vercel/functions`） |
+| 04 | [セマンティックバージョニングと ^ / ~ の違い](./04-semver-caret-tilde.md) | SemVer の意味、`^` と `~` の範囲、TypeScript が `~6.0.2` になっている理由（backend は 7 から 6 に戻した経緯）、`0.x` の特例 |
+| 05 | [npm scripts](./05-npm-scripts.md) | dev / typecheck / build / lint / preview がそれぞれ何をするか。`&&`、引数の渡し方、終了コード |
 | 06 | [package-lock.json の役割](./06-package-lock-json.md) | lock ファイルの中身（version / resolved / integrity）、`npm install` と `npm ci` の違い |
 | 07 | [npm と pnpm（pnpm-workspace.yaml とビルドスクリプト許可）](./07-npm-vs-pnpm-build-scripts.md) | `onlyBuiltDependencies` / `allowBuilds` で esbuild を許可する意味と、実際は npm で使われている混在状態 |
 
-### backend の実行とビルド
+### backend の実行とデプロイ
 
 | # | ノート | 内容 |
 | --- | --- | --- |
-| 08 | [tsx と tsx watch](./08-tsx-dev-runtime.md) | esbuild で TS を直接実行する仕組み、watch による再起動、型チェックをしない点 |
-| 09 | [backend の本番フロー（tsc → node dist/index.js）](./09-backend-build-and-start.md) | tsc ビルドと本番起動、TypeScript 7（ネイティブ版）、`dist` が .gitignore になかった問題（2026-10-12 に修正済み） |
+| 08 | [tsx と tsx watch](./08-tsx-dev-runtime.md) | esbuild で TS を直接実行する仕組み、エントリが `src/dev.ts` である理由、watch による再起動、型チェックをしない点 |
+| 09 | [backend の本番フロー（Vercel Functions と typecheck）](./09-backend-build-and-start.md) | `tsc` ビルド + `node dist/index.js` から Vercel Functions への移行、`build` → `typecheck` への変更、TypeScript 7 → 6 に戻した理由 |
 
 ### Vite（web-app のビルドツール）
 
@@ -44,24 +44,27 @@
 | 17 | [oxlint の基本](./17-oxlint-basics.md) | Rust 製 Linter と ESLint の違い、`.oxlintrc.json` の plugins（デフォルト上書きに注意）、カテゴリ、実行結果 |
 | 18 | [oxlint の React ルールと Fast Refresh](./18-oxlint-react-rules-fast-refresh.md) | `rules-of-hooks` と `only-export-components`、`allowConstantExport` が Vite の Fast Refresh と関係する理由 |
 | 19 | [.gitignore と .env をコミットしない運用](./19-gitignore-and-env-files.md) | 各 .gitignore の中身、`web-app/.env` が除外されていなかった問題（2026-10-12 に修正済み）、`.env.example` の推奨 |
-| 20 | [開発時の起動手順](./20-local-dev-workflow.md) | backend と web-app を別ターミナルで起動する手順、設定値のつながり、よくあるトラブル |
+| 20 | [開発時の起動手順](./20-local-dev-workflow.md) | Docker の PostgreSQL → backend → web-app の順に起動する手順、設定値のつながり、よくあるトラブル |
 
 ## このフォルダで見つかった主な改善ポイント（まとめ）
 
 | 優先度 | 内容 | 詳細 |
 | --- | --- | --- |
 | 済 | `web-app/.gitignore` に `.env` がない → 2026-10-12 に `.env` を追加済み | [19](./19-gitignore-and-env-files.md) |
-| 済 | `backend/.gitignore` に `dist` がない → 2026-10-12 に `dist/` を追加済み | [09](./09-backend-build-and-start.md), [19](./19-gitignore-and-env-files.md) |
+| 済 | `backend/.gitignore` に `dist` がない → 2026-10-12 に `dist/` を追加済み | [19](./19-gitignore-and-env-files.md) |
+| 済 | backend に typecheck スクリプトがない → `typecheck: tsc --noEmit` を追加済み（コミット `b00677a`） | [05](./05-npm-scripts.md), [09](./09-backend-build-and-start.md) |
+| 済 | backend の `name` が `"backend "`（末尾スペース）→ `"backend"` に修正済み | [01](./01-package-json-basics.md) |
+| 済 | TypeScript のメジャーが両プロジェクトで不一致（7 / 6）→ backend も `~6.0.2` に揃った（コミット `05cd00a`） | [04](./04-semver-caret-tilde.md), [09](./09-backend-build-and-start.md) |
+| 高 | `backend/.env` に `DATABASE_URL` がなく、ローカルで backend が起動しない | [19](./19-gitignore-and-env-files.md), [20](./20-local-dev-workflow.md) |
 | 中 | backend で npm（package-lock.json）と pnpm（pnpm-workspace.yaml）が混在 | [07](./07-npm-vs-pnpm-build-scripts.md) |
 | 中 | `.env.example` がない | [19](./19-gitignore-and-env-files.md) |
-| 中 | typecheck スクリプトがない、backend に Linter がない | [05](./05-npm-scripts.md), [17](./17-oxlint-basics.md) |
-| 低 | backend の `name` が `"backend "`（末尾スペース）、`private` なし | [01](./01-package-json-basics.md) |
+| 中 | web-app に単独の typecheck スクリプトがない、backend に Linter がない | [05](./05-npm-scripts.md), [17](./17-oxlint-basics.md) |
+| 低 | backend に `private` / `version` がない | [01](./01-package-json-basics.md) |
 | 低 | `@types/node` のバージョンが実行環境（Node 22）や両プロジェクト間で不一致 | [03](./03-dependencies-vs-devdependencies.md) |
-| 低 | TypeScript のバージョン指定（`~` / `^`、6 / 7）が両プロジェクトで不統一 | [04](./04-semver-caret-tilde.md) |
 | 低 | `index.html` の favicon が存在しない、`lang="en"` | [11](./11-index-html-entry.md) |
 
-## 確認に使った環境（2026-10-12 時点）
+## 確認に使った環境（2026-10-12 時点、2026-10-14 に backend の変更を反映）
 
 - Node.js v22.12.0 / npm 10.9.0 / pnpm 10.17.0（グローバル）
-- backend: hono 4.13.13, @hono/node-server 2.1.4, tsx 4.23.15（esbuild 0.28.2）, typescript 7.0.2
+- backend: hono 4.13.13, @hono/node-server 2.1.4, tsx 4.23.15（esbuild 0.28.2）, typescript 6.0.3, pg 8.23.1, @vercel/functions 3.10.0
 - web-app: vite 8.3.1（rolldown 1.2.11。vite の依存指定は `~1.2.9`）, @vitejs/plugin-react 6.1.1, oxlint 1.86.0, typescript 6.0.3, react 19.3.0

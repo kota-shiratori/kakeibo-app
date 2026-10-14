@@ -71,7 +71,7 @@ if (transactionType === "expense" && adjustAmount > 0) {
 
 ### typeof（backend）
 
-`backend/src/index.ts:65`
+`backend/src/index.ts:85-87`
 
 ```ts
 if (typeof amount !== "number" || amount === 0) {
@@ -95,7 +95,7 @@ if (typeof amount !== "number" || amount === 0) {
 
 - **truthiness は `0` や `""` も除外します。** `if (amount)` だと `0` が弾かれます。`number | undefined` から `undefined` だけ除きたいなら `amount !== undefined` と書きます。
 - **関数をまたぐと絞り込みが消えることがあります。** コールバック関数の中では、外側で絞り込んだ `let` 変数の型が元に戻ることがあります（その間に再代入される可能性があるため）。`const` なら維持されやすいです。
-- **`Array.prototype.includes` は型を絞り込みません。** `["income", "expense", "all"].includes(type)`（`backend/src/index.ts:21`）の後でも `type` は `string` のままです（→ `03-literal-union-types.md`）。
+- **`Array.prototype.includes` は型を絞り込みません。** `["income", "expense", "all"].includes(type)`（`backend/src/index.ts:32`）の後でも `type` は `string` のままです（→ `03-literal-union-types.md`）。
 - オブジェクトのプロパティ（`hooks.error` など）も絞り込まれますが、そのプロパティ（や途中のオブジェクト）へ代入すると絞り込みが解除され、コールバック関数の中には絞り込みが引き継がれません（なお、途中で普通の関数呼び出しを挟んでも TypeScript は絞り込みを解除しません。関数がプロパティを書き換えても検出できない、という意図的なトレードオフです）。このプロジェクトのように **分割代入で `const` のローカル変数に取り出してから** 判定すると確実です。
 
 ## 今後に活かせるポイント

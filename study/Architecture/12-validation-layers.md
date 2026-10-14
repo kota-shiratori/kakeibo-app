@@ -2,7 +2,7 @@
 
 ## 概要
 
-「入力が正しいか」のチェック（バリデーション）は、このプロジェクトでは **4 つの層** に分散しています。それぞれ目的が違い、どれか 1 つで全部をまかなうことはできません。
+「入力が正しいか」のチェック（バリデーション）は、このプロジェクトでは **4 つの層** に分散しています。さらに PostgreSQL を導入したことで、**DB の型・制約** が 5 つ目の層として加わりました。それぞれ目的が違い、どれか 1 つで全部をまかなうことはできません。
 
 | 層 | 目的 | 信頼できるか |
 |---|---|---|
@@ -10,6 +10,7 @@
 | フロントの JS | 送信前の整形・変換、即時フィードバック | ✕（同上） |
 | バックエンド | **不正なデータを絶対に通さない最後の砦** | ◯ |
 | OpenAPI スキーマ | ルールを文書化した「契約」 | —（実行はされない） |
+| DB の型・制約 | どの経路から来たデータでも、テーブル定義に合わないものは保存させない | ◯（ただし違反は例外になり、今は 500 になる） |
 
 原則は「**セキュリティと正しさはサーバーで保証し、クライアントの検証は使いやすさのため**」です。
 
@@ -39,14 +40,14 @@ if (transactionType === "expense" && adjustAmount > 0) {
 ### 層 3: バックエンド（`backend/src/index.ts`）
 
 ```ts
-// GET: クエリの列挙チェック :21
+// GET: クエリの列挙チェック :32
 if (!type || !["income", "expense", "all"].includes(type)) { ... 400 }
 
-// POST: 必須チェック :56
+// POST: 必須チェック :81
 if (!item || amount === undefined || !date) { ... 400 }
-// 型と値のチェック :65
+// 型と値のチェック :85
 if (typeof amount !== "number" || amount === 0) { ... 400 }
-// 形式チェック :74
+// 形式チェック :89
 if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ... 400 }
 ```
 
@@ -61,19 +62,32 @@ TransactionInput:
     date:   { type: string, format: date, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
 ```
 
+### 層 5: DB のテーブル定義（`transactions`）
+
+```sql
+CREATE TABLE transactions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    item VARCHAR(20) NOT NULL,
+    amount INTEGER NOT NULL,
+    date DATE NOT NULL
+);
+```
+
+型（`VARCHAR(20)`・`INTEGER`・`DATE`）と `NOT NULL` が、それ自体ルールとして働きます（`../Database/03-schema-design-for-kakeibo.md`）。
+
 ### 層ごとのルール対応表
 
-| ルール | HTML | フロント JS | バックエンド | OpenAPI |
-|---|---|---|---|---|
-| item 必須 | `required` | — | `!item` | `required` + `minLength: 1` |
-| item 最大 20 文字 | `maxLength={20}` | — | **なし** | **なし** |
-| amount 必須 | `required` | — | `amount === undefined` | `required` |
-| amount が数値 | `type="number"` | `Number()` | `typeof` | `type: number` |
-| amount ≠ 0 | **なし**（`min={0}` は 0 を許す） | — | `amount === 0` | `not: const: 0` |
-| amount ≥ 0（入力時） | `min={0}` | — | （負数は支出として正当） | — |
-| date 必須 | `required` | — | `!date` | `required` |
-| date 形式 | `type="date"` | — | 正規表現 | `format` + `pattern` |
-| type クエリ | — | （固定値で送る） | 列挙チェック | `enum` |
+| ルール | HTML | フロント JS | バックエンド | OpenAPI | DB |
+|---|---|---|---|---|---|
+| item 必須 | `required` | — | `!item` | `required` + `minLength: 1` | `NOT NULL`（空文字は通る） |
+| item 最大 20 文字 | `maxLength={20}` | — | **なし** | **なし** | `VARCHAR(20)` |
+| amount 必須 | `required` | — | `amount === undefined` | `required` | `NOT NULL` |
+| amount が数値 | `type="number"` | `Number()` | `typeof` | `type: number` | `INTEGER`（**整数のみ**、約 ±21 億） |
+| amount ≠ 0 | **なし**（`min={0}` は 0 を許す） | — | `amount === 0` | `not: const: 0` | **なし** |
+| amount ≥ 0（入力時） | `min={0}` | — | （負数は支出として正当） | — | — |
+| date 必須 | `required` | — | `!date` | `required` | `NOT NULL` |
+| date 形式 | `type="date"` | — | 正規表現 | `format` + `pattern` | `DATE`（実在しない日付はエラー） |
+| type クエリ | — | （固定値で送る） | 列挙チェック | `enum` | — |
 
 ## 重要語句
 
@@ -86,15 +100,17 @@ TransactionInput:
 ## 仕様・注意点
 
 - **ルールが層ごとにずれている**:
-  - 「item は 20 文字まで」はフロントにしかない。API を直接叩けば 21 文字以上も登録できる。
+  - 「item は 20 文字まで」はフロントと DB にしかない。API を直接叩いて 21 文字以上を送ると、backend は通してしまい、DB が `value too long for type character varying(20)` で拒否して **500** になる（登録はされない）。
   - 「amount ≠ 0」はフロントにない。0 を入力すると送信され、サーバーで 400 になり、汎用エラーだけが表示される（`11-error-handling-strategy.md`）。
 - **バックエンドの検証の穴**:
   - `!item` は空文字を弾くが、`item` が文字列かどうかは確認していない（`item: 123` が通る）。
   - `date` が文字列でない場合、`/.../.test(date)` は値を文字列化して判定する。
-  - 正規表現は形式だけを見るので `2025-13-45` のような存在しない日付も通る（OpenAPI の `format: date` は意味的に正しい日付を表すが、実装はそこまで見ていない）。
+  - 正規表現は形式だけを見るので `2025-13-45` のような存在しない日付も backend は通す（OpenAPI の `format: date` は意味的に正しい日付を表すが、実装はそこまで見ていない）。DB の `DATE` 型が拒否するので保存はされないが、結果は **500**。
+  - `amount` の小数（`1.5`）や `INTEGER` の範囲外（`2147483648`）も backend は通し、DB で拒否されて 500 になる（実験で確認、`../PostgreSQL/05-constraints-and-errors.md`）。
+  - 逆に「amount ≠ 0」は backend にしかなく、DB には制約がない。psql などから直接入れると 0 も入る。
   - `amount` に `NaN` や `Infinity` を JSON で送ることは JSON の仕様上できないので、その点は安全。
 - **OpenAPI と実装は自動で同期されない**: スキーマを変えても実装は変わらず、逆も同様です（`14-api-contract-and-types.md`）。
-- 4 つの層に同じルールを手で書くと、変更時に必ずどこかを直し忘れます。
+- 5 つの層に同じルールを手で書くと、変更時に必ずどこかを直し忘れます。特に **backend の検証が DB の制約より緩い** と、入力ミスが 400 ではなく 500 になります。
 
 ## 今後に活かせるポイント
 
@@ -106,7 +122,7 @@ TransactionInput:
 
 ### 段階 1: バックエンドを Zod スキーマで検証する
 
-このプロジェクトは既に Zod を依存に持っています（`backend/package.json:14`、現状は `env.ts` でのみ使用）。
+このプロジェクトは既に Zod を依存に持っています（`backend/package.json:15`、現状は `env.ts` でのみ使用）。スキーマのルールは **DB の型・制約と同じかそれより厳しく** します（`max(20)` は `VARCHAR(20)`、`int()` は `INTEGER`）。
 
 ```ts
 // backend/src/schemas/transaction.ts（案）
@@ -114,7 +130,12 @@ import { z } from "zod";
 
 export const transactionInputSchema = z.object({
   item: z.string().min(1, "項目は必須です。").max(20, "項目は20文字以内です。"),
-  amount: z.number().int().refine((v) => v !== 0, "金額は0以外の数値である必要があります。"),
+  amount: z
+    .number()
+    .int("金額は整数で入力してください。")
+    .min(-2147483648)
+    .max(2147483647) // INTEGER の範囲
+    .refine((v) => v !== 0, "金額は0以外の数値である必要があります。"),
   date: z.iso.date("日付はYYYY-MM-DD形式で入力してください。"),
 });
 
@@ -130,6 +151,10 @@ if (!parsed.success) {
 ```
 
 Hono のバリデーターミドルウェアと組み合わせる方法は Hono フォルダ参照。Zod の API 詳細は TypeScript フォルダ参照。
+
+### 段階 1.5: DB にも CHECK 制約を足す
+
+「amount ≠ 0」を DB でも守るため、`ALTER TABLE transactions ADD CONSTRAINT transactions_amount_nonzero CHECK (amount <> 0);` を追加すると、どの経路から入るデータにもルールが効きます（`../Database/03-schema-design-for-kakeibo.md`）。
 
 ### 段階 2: スキーマをフロントと共有する
 

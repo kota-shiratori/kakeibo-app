@@ -2,17 +2,18 @@
 
 ## 概要
 
-フロントとバックを分離すると、「API がどんな JSON を受け取り、返すか」という **契約** を両者で共有する必要があります。このプロジェクトでは、同じ「取引」の形が **3 か所に別々に書かれて** おり、どれも自動では同期されません。
+フロントとバックを分離すると、「API がどんな JSON を受け取り、返すか」という **契約** を両者で共有する必要があります。このプロジェクトでは、同じ「取引」の形が **4 か所に別々に書かれて** おり、どれも自動では同期されません。
 
 1. `backend/openapi.yaml` … 人間向けの仕様書
-2. `backend/src/index.ts` … 実際の実装（型注釈なし、オブジェクトリテラル）
+2. `backend/src/index.ts` … 実際の実装（SQL の列名と、行を変換するオブジェクトリテラル。型注釈なし）
 3. `web-app/src/hooks/transactions.ts` … フロントの TypeScript 型
+4. DB の `transactions` テーブル定義 … 列名・型（`BIGINT` / `VARCHAR(20)` / `INTEGER` / `DATE`）。リポジトリにはファイルとして存在せず、DB の中にだけある（`../Database/04-migrations-and-schema-management.md`）
 
 これが **二重管理（多重管理）問題** です。どれか 1 つを変えて他を直し忘れても、コンパイルは通り、実行時に初めて壊れます。
 
 ## このプロジェクトでの実装
 
-### 同じ「取引」が 3 か所に
+### 同じ「取引」が 4 か所に
 
 ```yaml
 # backend/openapi.yaml:120-131
@@ -26,11 +27,28 @@ Transaction:
 ```
 
 ```ts
-// backend/src/index.ts:30-37 — 型はなく、値から推論されるだけ
-const transactionList = [
-  { id: 1, item: "給料", amount: 10000, date: "2025-01-01" },
-];
+// backend/src/index.ts:41, 56-61 — pg の行は any。変換後のオブジェクトにも型注釈はない
+let historyQuery = `SELECT id, item, amount, date FROM transactions`;
+...
+const transactions = historyResult.rows.map((row) => ({
+  id: parseInt(row.id),
+  item: row.item,
+  amount: parseFloat(row.amount),
+  date: toYMD(new Date(row.date)),
+}));
 ```
+
+```sql
+-- DB（学習メモの CREATE TABLE。リポジトリには未保存）
+CREATE TABLE transactions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    item VARCHAR(20) NOT NULL,
+    amount INTEGER NOT NULL,
+    date DATE NOT NULL
+);
+```
+
+`pool.query` の結果 `rows` は型引数を渡さないと `any[]` なので、`row.idd` のように列名を打ち間違えてもコンパイルは通り、実行時に `undefined` になります。さらに `pg` は `BIGINT` を **文字列**、`DATE` を **JS の Date** で返すため、API の形（`id: number`、`date: "YYYY-MM-DD"`）に揃えるには変換が必要で、その変換も手書きです（`../PostgreSQL/07-node-postgres-type-conversion.md`）。
 
 ```ts
 // web-app/src/hooks/transactions.ts:1-12
@@ -72,7 +90,9 @@ sequenceDiagram
 
 ## 仕様・注意点
 
-- 現状は OpenAPI と実装・フロントの型の **内容はおおむね一致** しています（`id` の有無、`totalCount` / `totalAmount` など）。問題は「今一致している」ことではなく「**ずれても気づく仕組みがない**」ことです。
+- GET のレスポンスは、OpenAPI・実装・フロントの型の **内容がおおむね一致** しています（`id`、`totalCount` / `totalAmount` など）。問題は「今一致している」ことではなく「**ずれても気づく仕組みがない**」ことです。
+- 実際に **POST の 201 はずれています**。DB 導入後の実装は `RETURNING` で採番された `id` を含む `Transaction` を返します（`backend/src/index.ts:93-105`）が、OpenAPI は今も 201 のスキーマを `TransactionInput`（id なし）とし、説明も「受け取った内容をそのまま返します」のままです（`backend/openapi.yaml:50`, `58-63`）。フロントは 201 のボディを読んでいない（`useAddTransactions.ts:19-22` は `ok` だけを見る）ので、画面上の不具合にはなっていませんが、仕様書を信じて別のクライアントを作ると誤解します。この「実装を変えたが仕様書を直し忘れた」こと自体が、二重管理の典型的な失敗例です。
+- DB の型と API の型にも差があります。DB の `amount` は `INTEGER`（整数）ですが、OpenAPI・フロントは `number`（小数も可）。`id` は DB では `BIGINT` ですが、`parseInt` で `number` にしています（`Number.MAX_SAFE_INTEGER` を超える ID は扱えないが、家計簿の規模では問題にならない）。
 - 細かな差異の例:
   - OpenAPI の `id` は `integer`、フロントの型は `number`（TypeScript には整数型がないため避けられない差）。
   - OpenAPI の `date` は `format: date`、フロントの型はただの `string`。
@@ -92,6 +112,20 @@ sequenceDiagram
 どの方式でも、**境界（`response.json()` の直後）でランタイム検証を入れる** と、型と実データのずれを実行時に確実に検知できます。
 
 ## 改善するなら
+
+### 今すぐできる: OpenAPI の 201 を実装に合わせる
+
+```yaml
+# backend/openapi.yaml（修正案）
+      description: 収支を1件登録し、採番された id を含む登録結果を返します。
+      ...
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+```
 
 ### 今すぐできる: フロントでランタイム検証
 
@@ -147,4 +181,5 @@ const res = await client.transactions.$get({ query: { type: "income" } });
 - **openapi-typescript / openapi-fetch**: OpenAPI から型と型安全な fetch クライアントを得る。
 - **Hono RPC** と **@hono/zod-openapi**。
 - **tRPC / GraphQL**: 別の型共有アプローチ。
+- **ORM / クエリビルダー（Drizzle など）**: DB のテーブル定義から TypeScript の型を得て、4 つ目の「DB」との二重管理も減らす（`../Database/04-migrations-and-schema-management.md`）。
 - **契約テスト（Contract Testing）**: 実装が仕様に従っているかを自動テストで確認する（Pact、Schemathesis など）。

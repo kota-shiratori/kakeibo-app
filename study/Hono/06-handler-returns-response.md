@@ -14,7 +14,7 @@ Express のように `res.send()` を「呼ぶ」のではなく、`Response` �
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:18`（GET）と `backend/src/index.ts:51`（POST）は、どちらも `async` で書かれています。
+`backend/src/index.ts:29`（GET）と `backend/src/index.ts:77`（POST）は、どちらも `async` で書かれています。どちらもハンドラの中で DB に SQL を送り、その結果を `await` で待つためです。
 
 ```ts
 app.get("/transactions", async (c) => {
@@ -23,20 +23,28 @@ app.get("/transactions", async (c) => {
     return c.json({ message: "..." }, 400); // 早期 return
   }
   // ...
+  const historyResult = await pool.query(historyQuery); // ← DB の応答を待つ
+  const countResult = await pool.query(countQuery);
+  // ...
   return c.json(result, 200);               // 正常系の return
 });
 ```
 
 ```ts
 app.post("/transactions", async (c) => {
-  const body = await c.req.json();          // ← ここで await が必要なので async が必須
+  const body = await c.req.json();          // ← ボディの読み取りを待つ
   // ...
-  return c.json(body, 201);
+  const result = await pool.query(          // ← INSERT の結果を待つ
+    `INSERT INTO transactions (item, amount, date) VALUES ($1, $2, $3) RETURNING id, item, amount, date`,
+    [item, amount, date],
+  );
+  // ...
+  return c.json(newTransaction, 201);
 });
 ```
 
-- GET ハンドラは中で `await` を使っていないので、`async` は無くても動きます（将来 DB アクセスを足す前提と考えれば問題ありません）。
-- POST ハンドラは `await c.req.json()` があるため `async` が必須です。
+- GET ハンドラは `await pool.query(...)`（53-54 行目）があるため `async` が必須です。
+- POST ハンドラは `await c.req.json()`（78 行目）と `await pool.query(...)`（93 行目）があるため `async` が必須です。
 - どちらも **エラー時は早期 return**（ガード節）で `Response` を返し、最後に正常系の `Response` を返す構造です。
 
 ## 重要語句
@@ -60,7 +68,7 @@ app.post("/transactions", async (c) => {
 
 その他:
 
-- ハンドラ内で例外が投げられた（`await` した Promise が reject された）場合は、Hono が捕まえて `app.onError` のハンドラ（既定は 500）に渡します（→ 10 章）。
+- ハンドラ内で例外が投げられた（`await` した Promise が reject された）場合は、Hono が捕まえて `app.onError` のハンドラ（既定は 500）に渡します（→ 10 章）。このプロジェクトでは、DB に接続できない（`ECONNREFUSED`）・制約違反（21 文字の `item` など）で `pool.query` が reject されると、この経路で 500 になります（実験で確認）。
 - 素の `Response` を返しても構いません: `return new Response("ok", { status: 200 })`。
 - 戻り値の型を明示したい場合でも、`c.json()` の推論された型（`TypedResponse`）を潰さないよう、無理に `Promise<Response>` と注釈しない方が RPC と相性が良いです。
 
@@ -71,17 +79,18 @@ app.post("/transactions", async (c) => {
 
 ## 改善するなら
 
-GET ハンドラは今のところ `await` が無いので `async` を外しても構いませんが、統一感のために残す判断もアリです。より実践的な改善は、データ取得を非同期関数に分け、そこで `await` することです。
+今はハンドラの中で SQL を組み立てて `pool.query` を直接 `await` しています。データ取得を非同期関数（リポジトリ）に分け、ハンドラはそれを `await` するだけにすると、ハンドラが「入力の検証 → 取得 → Response を返す」に集中でき、テストでは偽物の関数に差し替えられます（`../Architecture/15-persistence-and-repository-layer.md`）。
 
 ```ts
-const fetchTransactions = async (type: "income" | "expense" | "all") => {
-  // 将来ここで DB にアクセスする
-  return [{ id: 1, item: "給料", amount: 10000, date: "2025-01-01" }];
+const listTransactions = async (type: "income" | "expense" | "all") => {
+  const where = { income: " WHERE amount > 0", expense: " WHERE amount < 0", all: "" }[type];
+  const result = await pool.query(`SELECT id, item, amount, date FROM transactions${where} ORDER BY date DESC, id DESC`);
+  return result.rows.map(toTransaction); // 行 → API の形への変換
 };
 
 app.get("/transactions", async (c) => {
   // ...検証...
-  const list = await fetchTransactions(type);
+  const list = await listTransactions(type);
   return c.json({ transactions: list }, 200);
 });
 ```

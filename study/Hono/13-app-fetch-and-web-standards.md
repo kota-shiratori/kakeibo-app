@@ -14,17 +14,26 @@ Node.js だけは歴史的に独自の `req`/`res` API を使っているので�
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:86-90`
+このプロジェクトでは、同じ `app` を 2 つの入口から使っています。
+
+`backend/src/index.ts:108`（アプリ本体を公開する）
 
 ```ts
-serve(
-  {
-    fetch: app.fetch,
-    port: 3000,
-  },
+export default app;
 ```
 
-ここで `app.fetch` を渡しているのが、Hono と Node.js の接点です。
+`backend/src/dev.ts:6`（ローカル開発：Node.js で起動する）
+
+```ts
+serve({ fetch: app.fetch, port: 3000 }, (info) => {
+```
+
+| 環境 | 入口 | `app.fetch` を呼ぶのは誰か |
+| --- | --- | --- |
+| ローカル（`npm run dev`） | `dev.ts` | `@hono/node-server` の `serve()` |
+| 本番（Vercel Functions） | `index.ts` の `export default app` | Vercel（`dev.ts` は使われない。`dev.ts:1` のコメント） |
+
+ローカルで `app.fetch` を `serve()` に渡しているのが、Hono と Node.js の接点です。
 
 ```
 ブラウザ
@@ -68,7 +77,8 @@ fetch = (request, ...rest) => {
 
 | ランタイム | 起動コードの例 |
 | --- | --- |
-| Node.js | `serve({ fetch: app.fetch, port: 3000 })`（`@hono/node-server`） |
+| Node.js | `serve({ fetch: app.fetch, port: 3000 })`（`@hono/node-server`）。このプロジェクトの `dev.ts` |
+| Vercel（Functions） | `export default app`。このプロジェクトの `index.ts`（Vercel の Hono 向けのゼロ設定デプロイ。Vercel 側の内部動作はこのノートでは未確認） |
 | Cloudflare Workers | `export default app`（Workers は default export の `fetch` メソッドを呼ぶ） |
 | Bun | `export default app`（Bun は default export の `fetch` を使う。`port` プロパティ付きのオブジェクトを export しても良い） |
 | Deno | `Deno.serve(app.fetch)` |
@@ -77,12 +87,14 @@ fetch = (request, ...rest) => {
 
 ### このプロジェクトをそのまま他ランタイムへ持っていけるか？
 
-**アプリ部分（`app.get` 等）は移植可能ですが、周辺は Node.js 依存** です。
+**ルーティングとハンドラの書き方は移植可能ですが、周辺は Node.js 依存** です。
 
-- `backend/src/env.ts` が `dotenv` と `process.env` を使っている（Workers では環境変数は `c.env` で受け取るのが基本）
-- `@hono/node-server` の `serve` は Node.js 専用
+- `backend/src/env.ts` が `process.env` を使っている（Workers では環境変数は `c.env` で受け取るのが基本）。`.env` を読む `dotenv` は `dev.ts` 側に分離済み
+- `pg`（node-postgres）は Node.js の TCP ソケットで DB に接続する。Workers などでは、そのランタイム向けのドライバ（HTTP 経由で接続するものなど）や接続方法に置き換える必要がある
+- `@vercel/functions` の `attachDatabasePool` は Vercel Functions 専用（`../PostgreSQL/08-neon-and-vercel-attach-database-pool.md`）
+- `@hono/node-server` の `serve` は Node.js 専用（ただし `dev.ts` に閉じ込められている）
 
-移植するなら「`app` 定義」と「起動・環境変数の読み込み」を分離しておくことが重要です（01 章の改善案）。
+「`app` 定義」と「起動」の分離は `index.ts` / `dev.ts` の分割で実現済みです（コミット `2a1609f`）。次の一歩は、**DB 接続（Pool）と環境変数の読み込みも `app` 定義から外へ出す** ことです（01 章の改善案）。
 
 ### その他
 
@@ -102,13 +114,13 @@ console.log(res.status, await res.json());
 
 ## 改善するなら
 
-ランタイムごとのエントリーポイントを分ける構成にしておくと、Node.js で開発しつつ本番は Workers、といった選択がしやすくなります。
+「Node.js で開発しつつ本番は Vercel」という形は、すでにエントリーポイントの分割（`dev.ts` / `index.ts`）で実現しています。さらに DB 接続をアプリ定義から外に出すと、エントリーごとに接続方法を変えられ、テストでは DB なしの実装を渡せます。
 
 ```
 src/
-  app.ts          ← Hono アプリ定義（ランタイム非依存）
-  node.ts         ← serve({ fetch: app.fetch, port }) だけ
-  worker.ts       ← export default app だけ
+  app.ts          ← createApp(repo)：Hono アプリ定義（ランタイム・DB 非依存）
+  index.ts        ← Vercel 用：Pool を作り、export default createApp(pgRepo)
+  dev.ts          ← ローカル用：serve({ fetch: app.fetch, port })（今のまま）
 ```
 
 環境変数も `process.env` 直読みではなく、ミドルウェアで `c.env` から取り出す形にすると、より移植しやすくなります（環境変数の扱いは `study/API-Design` 参照）。

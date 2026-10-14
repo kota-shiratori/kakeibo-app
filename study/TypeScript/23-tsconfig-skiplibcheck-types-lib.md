@@ -44,9 +44,9 @@ TypeScript は、自分が書いたコード以外にも多くの **型定義フ
     ...
   ```
 
-  以前の挙動にしたい場合は `"types": ["*"]` と書きます。このため、TS 6 以降では `types: ["node"]` のような明示が実質的に必須です。backend が `process.env`（`backend/src/env.ts:11`）を使えるのは、この `types: ["node"]` のおかげです。
+  以前の挙動にしたい場合は `"types": ["*"]` と書きます。このため、TS 6 以降では `types: ["node"]` のような明示が実質的に必須です。backend が `process.env`（`backend/src/env.ts:9`）を使えるのは、この `types: ["node"]` のおかげです。
 - `"vite/client"` は Vite が提供する型で、`import.meta.env`、`import.meta.hot`、`*.module.css` や画像ファイルの import などの型を定義しています（`web-app/node_modules/vite/client.d.ts`）。`import.meta.env.VITE_API_BASE_URL` が型エラーにならないのはこれのおかげです（→ `17-any-propagation.md`）。
-- `types` は「import しなくても見えるグローバルな型」の制御です。`import { Hono } from "hono"` のように明示的に import するパッケージの型は、`types` に関係なく読み込まれます。
+- `types` は「import しなくても見えるグローバルな型」の制御です。`import { Hono } from "hono"` のように明示的に import するパッケージの型は、`types` に関係なく読み込まれます。`import { Pool } from "pg"`（`backend/src/index.ts:4`）の型も、`types` に `pg` を書かなくても `@types/pg` から読み込まれます（`npm run typecheck` が通ることで確認）。
 
 ### skipLibCheck
 
@@ -66,7 +66,7 @@ TypeScript は、自分が書いたコード以外にも多くの **型定義フ
 ## 仕様・注意点
 
 - **自分で書いた `.d.ts` のミスも見逃す**: `skipLibCheck: true` だと、`src/vite-env.d.ts` のような自作の `.d.ts` 内の誤りもチェックされません。
-- **バージョンの不一致に注意**: backend は `@types/node` ^26（`backend/package.json:17`）、web-app は ^24（`web-app/package.json:22`）です。それぞれの tsconfig が別プロジェクトなので衝突はしませんが、実行する Node.js のバージョンと `@types/node` のメジャーバージョンを揃えるのが基本です。
+- **バージョンの不一致に注意**: backend は `@types/node` ^26（`backend/package.json:18`）、web-app は ^24（`web-app/package.json:22`）です。それぞれの tsconfig が別プロジェクトなので衝突はしませんが、実行する Node.js のバージョンと `@types/node` のメジャーバージョンを揃えるのが基本です。
 - `lib` に `DOM` を入れたままにすると、Node.js 環境のコードで `window` などを誤って使っても型エラーになりません。逆に web-app の `src` で `process.env` を使うと（`types` に `node` が無いので）型エラーになり、誤用を防げます。
 
 ## 今後に活かせるポイント

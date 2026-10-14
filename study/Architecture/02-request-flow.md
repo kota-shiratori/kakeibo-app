@@ -17,6 +17,7 @@ sequenceDiagram
   participant R as React (SPA)
   participant H as useIncomeTransactions
   participant API as Hono (port 3000)
+  participant DB as PostgreSQL
 
   U->>B: http://localhost:(Viteのポート)/ を開く
   B->>V: GET /
@@ -28,7 +29,11 @@ sequenceDiagram
   R->>H: RecentIncomeTransactionList がフックを呼ぶ
   H-->>R: 初期状態 isLoading=true → <Spinner />
   H->>API: fetch(`${BASE_URL}/transactions?type=income`)（useEffect 内）
-  API->>API: cors ミドルウェア → type を検証 → 一覧と合計を計算
+  API->>API: cors ミドルウェア → type を検証
+  API->>DB: SELECT ... WHERE amount > 0 ORDER BY date DESC
+  API->>DB: SELECT COUNT(*) ... WHERE amount > 0
+  DB-->>API: 行（id は文字列、date は Date）
+  API->>API: 行を変換（parseInt / toYMD）→ 合計を reduce で計算
   API-->>H: 200 { transactions, totalCount, totalAmount }
   H->>H: setIncomeList(data), setIsLoading(false)
   H-->>R: state 更新 → 再レンダリング
@@ -42,7 +47,7 @@ sequenceDiagram
 - フック呼び出し: `web-app/src/components/TransactionList.tsx:41`
 - fetch: `web-app/src/hooks/useIncomeTransactions.ts:15`
 - 取得開始のタイミング（マウント時に 1 回）: `web-app/src/hooks/useIncomeTransactions.ts:30-32`
-- サーバー側処理: `backend/src/index.ts:18-49`
+- サーバー側処理: `backend/src/index.ts:29-75`（SQL の組み立て 41-51、実行 53-54、変換 56-61、合計 63-66）
 - 状態に応じた表示切り替え: `web-app/src/components/TransactionList.tsx:85-108`
 
 Home には収入と支出の 2 つのリストがあるので、**同じ流れが 2 本並行して** 走ります（`type=income` と `type=expense`）。
@@ -57,6 +62,7 @@ sequenceDiagram
   participant A as useAddTransactions
   participant B as ブラウザ
   participant API as Hono
+  participant DB as PostgreSQL
 
   U->>P: フォーム入力 → 登録ボタン
   P->>P: e.preventDefault()、支出なら金額をマイナスに変換
@@ -67,7 +73,9 @@ sequenceDiagram
   B->>API: POST /transactions
   API->>API: 必須項目・金額・日付形式を検証
   alt 正常
-    API-->>A: 201 受け取った body をそのまま返す
+    API->>DB: INSERT ... VALUES ($1, $2, $3) RETURNING id, item, amount, date
+    DB-->>API: 採番された id を含む 1 行
+    API-->>A: 201 { id, item, amount, date }
     A-->>P: true
     P->>P: navigate("/") → Home が再マウントされ一覧を再取得
   else 不正
@@ -81,9 +89,9 @@ sequenceDiagram
 
 - 送信処理: `web-app/src/pages/Input.tsx:29-47`
 - fetch: `web-app/src/hooks/useAddTransactions.ts:14-18`
-- CORS 設定: `backend/src/index.ts:8-16`
-- 検証: `backend/src/index.ts:56-81`
-- 成功レスポンス: `backend/src/index.ts:83`
+- CORS 設定: `backend/src/index.ts:12-20`
+- 検証: `backend/src/index.ts:81-91`
+- INSERT と成功レスポンス: `backend/src/index.ts:93-105`
 
 `Content-Type: application/json` の POST はブラウザの「単純リクエスト」に当たらないため、実際の POST の前に OPTIONS によるプリフライトが送られます。`cors()` ミドルウェアは OPTIONS リクエストを自動で受け止めて 204 と許可ヘッダーを返します（`allowMethods` に `"OPTIONS"` を書かなくても応答します。`allowMethods` は `Access-Control-Allow-Methods` ヘッダーに載せる値の指定です）（CORS の詳細は Hono / API-Design フォルダ参照）。
 
@@ -98,11 +106,11 @@ sequenceDiagram
 
 - 開発時は `<StrictMode>`（`web-app/src/main.tsx:7`）により、マウント時の Effect が意図的に 2 回実行されます。そのため開発中はネットワークタブで GET が 2 回ずつ見えるのが正常です（本番ビルドでは 1 回）。
 - 登録後に一覧が更新されるのは、POST の結果を state に反映しているからではなく、**画面遷移で Home が作り直され、フックが再度 fetch するから** です（`10-state-management.md`）。
-- 本番では Vite dev server は存在せず、`npm run build`（`web-app/package.json:8`）で生成した静的ファイルを何らかの静的ホスティングから配信する形になります。バックエンドは `tsc` でビルドし `node dist/index.js` で起動します（`backend/package.json:6-7`）。
+- 本番では Vite dev server は存在せず、Vercel が `npm run build && npm run build:study`（`web-app/vercel.json:3`）で生成した `dist/` を静的に配信します。バックエンドも Vercel にデプロイされ、`backend/src/index.ts` の `export default app`（108 行目）が Vercel Functions として実行されます（ローカル用の `serve` は `backend/src/dev.ts` に分離。`backend/package.json` のスクリプトは `dev` と `typecheck` のみ）。DB は本番では Neon です（`../PostgreSQL/08-neon-and-vercel-attach-database-pool.md`）。
 
 ## 今後に活かせるポイント
 
-- 不具合調査は「ブラウザのネットワークタブ → サーバーログ → フックの state → コンポーネント」の順にこの図をなぞると切り分けやすい。
+- 不具合調査は「ブラウザのネットワークタブ → サーバーログ（DB のエラーを含む）→ フックの state → コンポーネント」の順にこの図をなぞると切り分けやすい。
 - 新機能を設計するときも、まずシーケンス図を描くと「どこで検証するか」「どこで state を持つか」が自然に決まる。
 
 ## 改善するなら

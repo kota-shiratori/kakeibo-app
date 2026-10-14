@@ -30,13 +30,14 @@
 }
 ```
 
-関連する scripts（`backend/package.json:4`）:
+関連する scripts（`backend/package.json:4-7`）:
 
 ```json
-"dev": "tsx watch src/index.ts",
-"build": "tsc",
-"start": "node dist/index.js"
+"dev": "tsx watch src/dev.ts",
+"typecheck": "tsc --noEmit"
 ```
+
+以前は `"build": "tsc"`（`dist/` に JS を出力）と `"start": "node dist/index.js"` でしたが、本番を Vercel Functions に移したため、`tsc` は **型チェック専用（`--noEmit`）** になりました（`../Tooling/09-backend-build-and-start.md`）。
 
 | オプション | 値 | 意味 | 詳細 |
 | --- | --- | --- | --- |
@@ -48,7 +49,7 @@
 | `types` | `["node"]` | 自動で読み込む `@types` パッケージ | `23-tsconfig-skiplibcheck-types-lib.md` |
 | `jsx` / `jsxImportSource` | `react-jsx` / `hono/jsx` | JSX を Hono の JSX ランタイムで変換 | 下記 |
 | `rootDir` | `./src` | 入力ファイルのルート | 下記 |
-| `outDir` | `./dist` | 出力先 | 下記 |
+| `outDir` | `./dist` | 出力先（現在は `--noEmit` なので使われていない） | 下記 |
 
 ### target: ESNext
 
@@ -58,15 +59,15 @@
 
 ### rootDir / outDir
 
-- `tsc` を実行すると、`rootDir`（`./src`）の中のフォルダ構造を保ったまま、`outDir`（`./dist`）に `.js` を出力します。`src/index.ts` → `dist/index.js`、`src/env.ts` → `dist/env.js`。
-- `npm start` の `node dist/index.js` はこの出力を実行しています。
+- `tsc` を（`--noEmit` なしで）実行すると、`rootDir`（`./src`）の中のフォルダ構造を保ったまま、`outDir`（`./dist`）に `.js` を出力します。`src/index.ts` → `dist/index.js`、`src/env.ts` → `dist/env.js`、`src/dev.ts` → `dist/dev.js`。
+- 以前は `npm start` の `node dist/index.js` がこの出力を実行していました。現在の `npm run typecheck` は `--noEmit` なので何も出力せず、`outDir` は実質使われていません。
 - `rootDir` を明示しておくと、`src` の外のファイルを誤ってコンパイル対象にしたときにエラーで気付けます。
 
 ### include / exclude
 
 - `include` を書いていないので、デフォルトの「`tsconfig.json` のあるフォルダ以下すべて（`**/*`）」が対象です。
 - `exclude` を **書かなかった場合** のデフォルトは「`node_modules`, `bower_components`, `jspm_packages` と `outDir`」です。`exclude` を書くとこのデフォルトが **置き換わる** ため、この設定では `outDir`（`dist`）は除外リストに入りません（TypeScript 6.0 の `_tsc.js` で、`exclude` が無いときだけ `outDir` を足す実装になっていることを確認）。
-- それでも問題にならないのは、`dist` に出力されるのが `.js` だけで、`allowJs` も `declaration`（`.d.ts` 出力）も無効なため、`**/*` の対象（`.ts` / `.tsx` / `.d.ts`）に該当しないからです。`tsc --showConfig` で見ると、対象ファイルは `./src/env.ts` と `./src/index.ts` の 2 つだけです。将来 `declaration: true` を足す場合は `"exclude": ["node_modules", "dist"]` としておくか、`"include": ["src"]` を明示するのが安全です。
+- それでも問題にならないのは、`dist` に出力されるのが `.js` だけで、`allowJs` も `declaration`（`.d.ts` 出力）も無効なため、`**/*` の対象（`.ts` / `.tsx` / `.d.ts`）に該当しないからです。`tsc --showConfig` で見ると、対象ファイルは `./src/dev.ts`、`./src/env.ts`、`./src/index.ts` の 3 つだけです（2026-10-14 に確認）。将来 `declaration: true` を足す場合は `"exclude": ["node_modules", "dist"]` としておくか、`"include": ["src"]` を明示するのが安全です。
 
 ### jsx / jsxImportSource
 
@@ -85,10 +86,10 @@
 
 ## 仕様・注意点
 
-- **`tsx` は型チェックをしません。** `npm run dev`（`tsx watch`）は型を消して実行するだけなので、型エラーがあっても動いてしまいます。型チェックは `npm run build`（`tsc`）やエディタで行われます。
+- **`tsx` は型チェックをしません。** `npm run dev`（`tsx watch`）は型を消して実行するだけなので、型エラーがあっても動いてしまいます。型チェックは `npm run typecheck`（`tsc --noEmit`）やエディタで行われます。本番の Vercel のデプロイでも `tsc` は実行されないので、型チェックを走らせるのは自分（または CI）の役目です。
 - `target` は「構文」の変換であり、`Array.prototype.findLast` のような **API（ランタイムの機能）を補う（polyfill）ことはしません**。実行環境に無い API は `lib` で型が通っても実行時に失敗します。
 - TypeScript 6.0 以降は `target` を省略すると最新の標準（ES2025 相当。`_tsc.js` の計算ロジックでは `LatestStandard` を使用）になりますが、明示しておく方が意図が伝わります。
-- TypeScript 6.0 では `target: "ES5"` が非推奨になり、7.0 では削除されています（→ `28-typescript-6-and-7.md`）。
+- TypeScript 6.0 では `target: "ES5"` が非推奨になり、7.0 では削除されています（→ `28-typescript-6-and-7.md`）。backend は以前 TypeScript 7.0.2 を使っていましたが、現在は web-app と同じ 6.0.3 です（`backend/package.json:21` の `"~6.0.2"`）。
 
 ## 今後に活かせるポイント
 
@@ -104,13 +105,9 @@
    "lib": ["ES2023"],
    ```
 
-   （現在の `src/index.ts` / `src/env.ts` をこの設定で TypeScript 7.0.2 により型チェックし、エラーが出ないこと、`document` を使うと `Cannot find name 'document'` になることをスクラッチで確認済みです。`fetch` や `Request` などの型は `@types/node` 側にも定義されています。）
+   （以前、当時の `src/index.ts` / `src/env.ts` をこの設定で TypeScript 7.0.2 により型チェックし、`document` を使うと `Cannot find name 'document'` になることを確認しました。2026-10-14 に、`pg` / `@vercel/functions` を使う現在の `src/` 3 ファイルも TypeScript 6.0.3 + この設定でエラーなし（終了コード 0）であることを確認しています。`fetch` や `Request` などの型は `@types/node` 側にも定義されています。）
 
-2. **型チェック専用スクリプトを追加**: `tsx` は型チェックしないので、`package.json` に追加しておくと便利です。
-
-   ```json
-   "typecheck": "tsc --noEmit"
-   ```
+2. **型チェック専用スクリプト**: `"typecheck": "tsc --noEmit"` は追加済み（対応済み）。CI やコミット前に実行する運用にすると、型エラーのまま Vercel にデプロイされるのを防げます。さらに `outDir` を削除し `"noEmit": true` を tsconfig に書けば、うっかり引数なしの `tsc` で `dist/` が作られることもなくなります。
 
 3. 使っていない `jsx` / `jsxImportSource` は、Hono の JSX を使わないなら削除してもよいでしょう（使う予定があれば残してかまいません）。
 

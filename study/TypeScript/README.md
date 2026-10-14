@@ -1,12 +1,12 @@
 # TypeScript 学習ノート（kakeibo-app）
 
-家計簿アプリ（`web-app/`: React + Vite + TypeScript 6.0、`backend/`: Hono + TypeScript 7.0）のコードを題材に、TypeScript の言語機能と tsconfig の設定を学ぶためのノートです。
+家計簿アプリ（`web-app/`: React + Vite + TypeScript 6.0、`backend/`: Hono + pg + TypeScript 6.0。backend は以前 7.0 だった）のコードを題材に、TypeScript の言語機能と tsconfig の設定を学ぶためのノートです。
 
 - 前半（01〜19）: 言語機能
 - 後半（20〜27）: tsconfig の設定
 - 最後（28〜29）: バージョンの違いと、プロジェクト全体の型の課題
 
-各ノートは「概要 → このプロジェクトでの実装（ファイルパス:行番号付き） → 重要語句 → 仕様・注意点 → 今後に活かせるポイント → 改善するなら → 次に学ぶこと」の構成です。バージョン固有の挙動は、プロジェクトの `node_modules` に入っている TypeScript 6.0.3 / 7.0.2 の実装と、実際の型チェック結果で確認しています。
+各ノートは「概要 → このプロジェクトでの実装（ファイルパス:行番号付き） → 重要語句 → 仕様・注意点 → 今後に活かせるポイント → 改善するなら → 次に学ぶこと」の構成です。バージョン固有の挙動は、プロジェクトの `node_modules` に入っている TypeScript 6.0.3 / 7.0.2（7.0.2 は backend が 7 系だった時期のもの）の実装と、実際の型チェック結果で確認しています。2026-10-14 に、backend の DB 導入（`pg` / Vercel Functions）と TypeScript 6.0 への変更を各ノートに反映しました。
 
 ## 目次
 
@@ -66,7 +66,7 @@
 
 | # | ノート | 内容 |
 | --- | --- | --- |
-| 28 | [TypeScript 6 と 7 の違い](./28-typescript-6-and-7.md) | Go 製ネイティブ版 7.0 の構成、6.0 の既定値変更・非推奨化と 7.0 での削除 |
+| 28 | [TypeScript 6 と 7 の違い](./28-typescript-6-and-7.md) | Go 製ネイティブ版 7.0 の構成、6.0 の既定値変更・非推奨化と 7.0 での削除、backend を 7 → 6 に戻した経緯 |
 | 29 | [FE/BE の型の二重定義](./29-type-sharing-fe-be.md) | web-app・backend・openapi.yaml で型がずれるリスクと、型共有の方法 |
 
 ## 関連フォルダ

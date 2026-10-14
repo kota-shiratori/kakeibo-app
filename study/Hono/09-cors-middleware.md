@@ -2,19 +2,19 @@
 
 ## 概要
 
-フロントエンド（Vite の開発サーバー）とバックエンド（`localhost:3000`）はオリジンが異なるため、ブラウザから API を呼ぶには **CORS ヘッダ** が必要です。Hono では組み込みの `cors()` ミドルウェアを `app.use` するだけで対応できます。
+フロントエンド（ローカルでは Vite の開発サーバー）とバックエンド（ローカルでは `localhost:3000`、本番では Vercel 上の別のデプロイ）はオリジンが異なるため、ブラウザから API を呼ぶには **CORS ヘッダ** が必要です。Hono では組み込みの `cors()` ミドルウェアを `app.use` するだけで対応できます。
 
 > CORS の概念そのもの（同一オリジンポリシー、プリフライトリクエスト、credentials の意味など）は `study/API-Design` を参照してください。ここでは **Hono の `cors()` の書き方・オプション・実際の挙動** に絞ります。
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:3`
+`backend/src/index.ts:2`
 
 ```ts
 import { cors } from "hono/cors";
 ```
 
-`backend/src/index.ts:8-16`
+`backend/src/index.ts:12-20`
 
 ```ts
 app.use(
@@ -28,7 +28,7 @@ app.use(
 );
 ```
 
-- `origin` には環境変数 `FRONTEND_URL`（`backend/src/env.ts` で定義）を配列で渡しています。オリジンをコードに直書きせず、環境ごとに切り替えられるようにしているわけです。
+- `origin` には環境変数 `FRONTEND_URL`（`backend/src/env.ts:6` で定義）を配列で渡しています。オリジンをコードに直書きせず、環境ごとに切り替えられるようにしているわけです。
 - フロントの POST（`web-app/src/hooks/useAddTransactions.ts:16`）は `Content-Type: application/json` を付けるため、ブラウザはプリフライト（OPTIONS）を送ります。`allowHeaders` に `Content-Type` が入っているのはそのためです。
 
 ## 重要語句（オプション一覧）
@@ -59,7 +59,7 @@ app.use(
 
 ### 2. 許可されていないオリジンからのリクエストも「処理はされる」
 
-`Origin: http://evil.example` で GET すると、**ステータス 200 でボディも返り**、`Access-Control-Allow-Origin` ヘッダが付かないだけでした。CORS はあくまで **ブラウザが** レスポンスを JS に渡すかどうかを決める仕組みで、サーバー側でリクエストを拒否するものではありません。curl などからは普通に叩けます。認可が必要なら別途認証を実装します。
+`Origin: http://evil.example` で GET すると、**ステータス 200 でボディ（DB から取得した一覧）も返り**、`Access-Control-Allow-Origin` ヘッダが付かないだけでした。CORS はあくまで **ブラウザが** レスポンスを JS に渡すかどうかを決める仕組みで、サーバー側でリクエストを拒否するものではありません。curl などからは普通に叩けます。認可が必要なら別途認証を実装します。
 
 ### 3. プリフライト（OPTIONS）はミドルウェアが直接 204 を返す
 

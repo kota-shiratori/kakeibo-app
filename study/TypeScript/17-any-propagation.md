@@ -20,7 +20,7 @@ const data = (await response.json()) as TransactionListInfo;
 
 ### 2. Hono の `c.req.json()` → `Promise<any>`（backend）
 
-`backend/src/index.ts:52`
+`backend/src/index.ts:78-79`
 
 ```ts
 const body = await c.req.json();
@@ -29,7 +29,24 @@ const { item, amount, date } = body;
 
 型定義は `json<T = any>(): Promise<T>;`（`backend/node_modules/hono/dist/types/request.d.ts:141`）。型引数を渡さなければ `any` です。`body`、`item`、`amount`、`date` はすべて `any` になり、たとえば `date.toUpperCase()` と書いても（`date` が数値で届くことがあっても）型エラーになりません。
 
-### 3. `import.meta.env.VITE_API_BASE_URL` → `any`（web-app）
+### 3. `pool.query()` の結果の行 → `any`（backend）
+
+`backend/src/index.ts:53-61`
+
+```ts
+const historyResult = await pool.query(historyQuery);
+// ...
+const transactions = historyResult.rows.map((row) => ({
+  id: parseInt(row.id),
+  item: row.item,
+  amount: parseFloat(row.amount),
+  date: toYMD(new Date(row.date)),
+}));
+```
+
+`@types/pg` の定義は `query<R extends QueryResultRow = any, ...>` と `QueryResult<R ...>` の `rows: R[]`（`backend/node_modules/@types/pg/index.d.ts:104-105`, `:216`）で、型引数を渡さなければ `row` は `any` です。`row.itme` のように列名を打ち間違えても型エラーにならず、実行時に `undefined` になります。`pool.query<{ id: string; item: string; amount: number; date: Date }>(...)` のように行の型を渡せますが、これも `as` と同じく **検証ではなく宣言** なので、SQL の列と一致しているかは自分で保証する必要があります。
+
+### 4. `import.meta.env.VITE_API_BASE_URL` → `any`（web-app）
 
 `web-app/src/hooks/useAddTransactions.ts:3`（他のフックも同様）
 

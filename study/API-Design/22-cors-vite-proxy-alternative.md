@@ -22,8 +22,9 @@ CORS が必要になるのは、ブラウザから見て **フロントと API �
 現在は proxy を使わず、**CORS で解決する方式** です。
 
 - フロント: API の URL を環境変数 `VITE_API_BASE_URL` から組み立てて直接呼ぶ（`web-app/src/hooks/useIncomeTransactions.ts:3`, `:15`）。
-- バック: `cors()` ミドルウェアで `FRONTEND_URL` を許可（`backend/src/index.ts:8-16`）。
+- バック: `cors()` ミドルウェアで `FRONTEND_URL` を許可（`backend/src/index.ts:12-20`）。
 - `web-app/vite.config.ts:5-10` には `server.proxy` の設定はありません。
+- 本番のフロントは Vercel で配信しており、`web-app/vercel.json` の `rewrites` は「`/study/` 以外を `/index.html` に送る」SPA フォールバック用だけです。API への転送（`/api/...` → backend）の設定はないので、本番も CORS 方式です。
 
 ## 重要語句
 
@@ -35,7 +36,7 @@ CORS が必要になるのは、ブラウザから見て **フロントと API �
 ## 仕様・注意点
 
 - **`server.proxy` は開発サーバー（`vite` / `npm run dev`）でのみ有効** です。`vite build` で作った静的ファイルを本番で配信するときには存在しません。本番では、
-  - Nginx / Caddy / CDN（Cloudflare など）で `/api` を API サーバーに振り分ける、
+  - Nginx / Caddy / CDN（Cloudflare など）やホスティングの機能（Vercel の `rewrites` で外部 URL に転送する など）で `/api` を API サーバーに振り分ける、
   - あるいは API サーバー自身がフロントの静的ファイルも配信する、
   - あるいは本番でも CORS を設定する、
   のいずれかが必要です。

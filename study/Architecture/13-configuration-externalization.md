@@ -2,20 +2,23 @@
 
 ## 概要
 
-「API サーバーの URL」や「CORS で許可するフロントの URL」は、開発環境・本番環境で値が変わります。これらをコードに直接書かず、**環境変数（`.env` ファイル）として外に出す** のが設定の外部化です。
+「API サーバーの URL」「CORS で許可するフロントの URL」「DB の接続先」は、開発環境・本番環境で値が変わります。これらをコードに直接書かず、**環境変数（`.env` ファイル）として外に出す** のが設定の外部化です。
 
 同じコードを、設定だけ変えて別の環境で動かせる —— これはデプロイ可能なアプリを作るうえでの基本原則です（The Twelve-Factor App の「III. 設定」）。
 
 ## このプロジェクトでの実装
 
-### 2 つの環境変数
+### 3 つの環境変数
 
 | キー | どこで使う | 意味 |
 |---|---|---|
-| `FRONTEND_URL` | `backend/.env` → `backend/src/env.ts:9` → `backend/src/index.ts:11` | CORS で許可するオリジン（フロントの URL） |
+| `FRONTEND_URL` | `backend/.env` → `backend/src/env.ts:6` → `backend/src/index.ts:15` | CORS で許可するオリジン（フロントの URL） |
+| `DATABASE_URL` | `backend/.env` → `backend/src/env.ts:7` → `backend/src/index.ts:7` | PostgreSQL の接続文字列（ローカルは Docker、本番は Neon）。**パスワードを含む秘密情報** |
 | `VITE_API_BASE_URL` | `web-app/.env` → 各フックの `:3` | フロントが呼び出す API のベース URL |
 
-2 つは **お互いを指し合う** 関係です。
+本番（Vercel）では `.env` ファイルではなく、Vercel のプロジェクト設定の Environment Variables に同じキーを登録します（設定状況はこのノートでは未確認）。
+
+`FRONTEND_URL` と `VITE_API_BASE_URL` は **お互いを指し合う** 関係です。`DATABASE_URL` は backend だけが知っていて、フロントには一切出てきません。
 
 ```mermaid
 flowchart LR
@@ -26,37 +29,50 @@ flowchart LR
   subgraph backend
     BE["Hono"]
     E2["FRONTEND_URL<br/>= 許可するフロントの場所"]
+    E3["DATABASE_URL<br/>= DB の場所と認証情報"]
   end
+  DB[("PostgreSQL")]
   E1 -. 参照 .-> BE
   E2 -. 参照 .-> FE
+  E3 -. 参照 .-> DB
   FE -- fetch --> BE
+  BE -- SQL --> DB
 ```
 
 ### バックエンド: 起動時に検証する
 
 ```ts
-// backend/src/env.ts:1-12
+// backend/src/env.ts:1-10
 import { createEnv } from "@t3-oss/env-core";
 import z from "zod";
-import dotenv from "dotenv";
-
-dotenv.config();                       // .env を process.env に読み込む
 
 export const env = createEnv({
   server: {
     FRONTEND_URL: z.string(),          // 文字列であることを要求
+    DATABASE_URL: z.string(),
   },
   runtimeEnv: process.env,
 });
 ```
 
 ```ts
-// backend/src/index.ts:10-11
-cors({
-  origin: [env.FRONTEND_URL],
+// backend/src/dev.ts:2（ローカル起動時だけ）
+import "dotenv/config";                // .env を process.env に読み込む
 ```
 
-`process.env.FRONTEND_URL` を直接使わず、**検証済みの `env` オブジェクト経由** で使うのがポイントです。設定が欠けていればサーバー起動時にエラーで止まるので、「動いているように見えて CORS だけ失敗する」といった分かりにくい不具合を防げます（ライブラリの詳細は Tooling / TypeScript フォルダ参照）。
+```ts
+// backend/src/index.ts:7, 14-15
+const pool = new Pool({ connectionString: env.DATABASE_URL });
+...
+  cors({
+    origin: [env.FRONTEND_URL],
+```
+
+以前のノートでは `env.ts` の中で `dotenv.config()` を呼ぶ形を扱っていましたが（初回コミット `068b29e` の時点で既にその呼び出しはなく、`.env` を読むコードはどこにもありませんでした）、今は **ローカル用のエントリ `dev.ts` だけ** が `.env` を読み込みます（コミット `2a1609f` で追加）。本番（Vercel）では `.env` ファイルを使わず、プラットフォームが `process.env` に値を入れてくれるからです。`env.ts` は「どこから値が来たか」を気にせず、`process.env` を検証するだけになりました。
+
+`process.env.FRONTEND_URL` を直接使わず、**検証済みの `env` オブジェクト経由** で使うのがポイントです。設定が欠けていればサーバー起動時にエラーで止まるので、「動いているように見えて CORS だけ失敗する」「最初の SQL で初めて接続エラーになる」といった分かりにくい不具合を防げます（ライブラリの詳細は API-Design / Tooling フォルダ参照）。
+
+実際、2026-10-14 時点のローカルの `backend/.env` には `FRONTEND_URL` しかなく、`env.ts` を読み込むと `Invalid environment variables`（`DATABASE_URL` が `undefined`）で止まることを確認しています（`../Docker/08-connecting-backend-to-local-db.md`）。
 
 ### フロントエンド: ビルド時に埋め込まれる
 
@@ -82,13 +98,14 @@ Vite は `VITE_` で始まる変数だけをクライアントのコードに公
 - **フロントの値は起動時ではなくビルド時に決まる**: 本番の API URL を変えるには再ビルドが必要です。
 - **フロント側には検証がない**: `VITE_API_BASE_URL` が未設定だと `BASE_URL` は `undefined` になり、`fetch("undefined/transactions?...")` という **相対 URL** へのリクエストになって失敗します。エラーメッセージからは原因が分かりにくいです。
 - **型の補完**: `import.meta.env.VITE_API_BASE_URL` の型は `vite/client` の既定の型定義（`tsconfig.app.json:7`）によるもので、このプロジェクトでは `vite-env.d.ts` 等で独自に型付けしていません（TypeScript / Tooling フォルダ参照）。
-- **バックエンドの検証は「文字列であること」だけ**: `z.string()` は空文字も通します。`z.url()` にすると URL 形式も保証できます。
-- **ポート番号はハードコード**: バックエンドの `port: 3000`（`backend/src/index.ts:89`）は環境変数化されていません。多くのホスティングは `PORT` 環境変数でポートを指定するため、本番デプロイ時には外部化が必要になります。
+- **バックエンドの検証は「文字列であること」だけ**: `z.string()` は空文字も通します。`z.url()` にすると URL 形式も保証できます（`DATABASE_URL` の `postgresql://...` も URL として検証できる）。
+- **`DATABASE_URL` は秘密情報**: パスワードを含むので、`.env`（Git 管理外）と Vercel の環境変数にだけ置き、コードやログ、`VITE_` 変数には絶対に入れません。ローカル用（Docker）と本番用（Neon）は別の値・別のパスワードにします。
+- **ポート番号はハードコード**: ローカル起動の `port: 3000`（`backend/src/dev.ts:6`）は環境変数化されていません。本番は Vercel Functions が `app` を直接呼び出すため、ポートを自分で待ち受けることはなく、このハードコードは本番には影響しません（`PORT` で待ち受ける形式のホスティングに移すなら外部化が必要）。
 - **`.env` の扱い**: 当初は `backend/.gitignore` でしか `.env` を除外していませんでしたが、2026-10-12 に修正済みで、現在は `backend/.gitignore:18` と `web-app/.gitignore:16` の両方で除外されています。チームで共有するなら値の入っていない `.env.example` をコミットし、実際の `.env` は各自で作る運用が一般的です。
 
 ## 今後に活かせるポイント
 
-- 環境ごとに変わる値（URL、ポート、DB 接続文字列、API キー）は最初から環境変数にする。
+- 環境ごとに変わる値（URL、ポート、DB 接続文字列、API キー）は最初から環境変数にする。このプロジェクトでも DB を足すときに `DATABASE_URL` を 1 つ追加するだけで、ローカル（Docker）と本番（Neon）を切り替えられた。
 - 環境変数は **アプリの入口で 1 回だけ読み、検証し、型付きのオブジェクトとして配る**（このプロジェクトの `env.ts` の形）。コードのあちこちで `process.env.XXX` を直接読まない。
 - フロントとバックで「秘密にできる / できない」の違いを常に意識する。
 
@@ -114,7 +131,8 @@ export const env = { apiBaseUrl } as const;
 export const env = createEnv({
   server: {
     FRONTEND_URL: z.url(),
-    PORT: z.coerce.number().default(3000),
+    DATABASE_URL: z.url(),
+    PORT: z.coerce.number().default(3000), // dev.ts の serve で使う
   },
   runtimeEnv: process.env,
 });
@@ -123,8 +141,9 @@ export const env = createEnv({
 ### サンプルファイルを用意
 
 ```text
-backend/.env.example     FRONTEND_URL=
-web-app/.env.example     VITE_API_BASE_URL=
+backend/.env.example     FRONTEND_URL=http://localhost:5173
+                         DATABASE_URL=postgresql://postgres:<password>@localhost:5432/kakeibo_db
+web-app/.env.example     VITE_API_BASE_URL=http://localhost:3000
 ```
 
 ## 次に学ぶこと

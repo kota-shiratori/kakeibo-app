@@ -2,25 +2,28 @@
 
 ## 概要
 
-このプロジェクトでは、web-app と backend で **異なるメジャーバージョンの TypeScript** を使っています。
+このプロジェクトでは以前、web-app と backend で **異なるメジャーバージョンの TypeScript** を使っていました。現在は backend も 6.0 に戻り、両方とも 6.0.3 です。
 
 | | package.json の指定 | 実際にインストールされているバージョン |
 | --- | --- | --- |
 | web-app | `"typescript": "~6.0.2"`（`web-app/package.json:27`） | 6.0.3（`npx tsc --version`） |
-| backend | `"typescript": "^7.0.2"`（`backend/package.json:19`） | 7.0.2（`npx tsc --version`） |
+| backend（以前） | `"typescript": "^7.0.2"` | 7.0.2 |
+| backend（現在） | `"typescript": "~6.0.2"`（`backend/package.json:21`） | 6.0.3（`npx tsc -v`、2026-10-14 に確認） |
+
+backend を 6.0 に戻したのはコミット `05cd00a`「TypeScript を 6.0 に下げる（Vercel のビルドが TS7 で @types/node を解決できないため）」です。ローカルでは 7.0 で型チェックが通っていても、**デプロイ先のビルド環境が新しいメジャーに対応しきれていない** ことがある、という実例です（詳細は `../Tooling/09-backend-build-and-start.md`）。以下の 7.0 についての記述は、backend が 7.0.2 だった時期に `backend/node_modules` を調べて確認したものです。
 
 - **TypeScript 6.0** は、従来どおり TypeScript（JavaScript）で書かれたコンパイラの **最後のメジャー系列** という位置づけで、7.0 への移行準備として既定値の変更や古いオプションの非推奨化が行われました。
 - **TypeScript 7.0** は、コンパイラを **Go 言語で書き直したネイティブ実装**（開発コードネーム "Project Corsa"、開発中は `tsgo` コマンドとして提供されていたもの）です。型チェックの意味（言語仕様）は 6.0 と揃えつつ、大幅な高速化（公式発表では約 10 倍規模）を目指したものです。
 
 ## このプロジェクトでの実装（node_modules で確認できる違い）
 
-### TypeScript 6.0.3（web-app）
+### TypeScript 6.0.3（web-app、現在は backend も）
 
 `web-app/node_modules/typescript/lib/` に `_tsc.js`、`typescript.js` などの **JavaScript で書かれたコンパイラ本体** と `lib.*.d.ts` が入っています。`tsc` は Node.js 上で動く JS プログラムです。
 
-### TypeScript 7.0.2（backend）
+### TypeScript 7.0.2（以前の backend）
 
-`backend/node_modules/typescript/` の構成はまったく違います。
+当時の `backend/node_modules/typescript/` の構成はまったく違いました（現在の backend の `node_modules/typescript/lib/` は 6.0 と同じく `_tsc.js` などの JS 実装で、`node_modules/@typescript/` は存在しません）。
 
 - `lib/tsc.js` は、プラットフォーム別のネイティブ実行ファイルを起動するだけの小さなラッパーです。
 
@@ -33,7 +36,7 @@
   execFileSync(exe, process.argv.slice(2), { stdio: "inherit" });
   ```
 
-- 実体は `optionalDependencies` でインストールされるプラットフォーム別パッケージにあります。この環境（macOS / Apple Silicon）では `backend/node_modules/@typescript/typescript-darwin-arm64/lib/tsc` で、`file` コマンドで見ると `Mach-O 64-bit executable arm64`（ネイティブバイナリ）です。`lib.*.d.ts` もこのパッケージに同梱されています。
+- 実体は `optionalDependencies` でインストールされるプラットフォーム別パッケージにあります。この環境（macOS / Apple Silicon）では当時 `backend/node_modules/@typescript/typescript-darwin-arm64/lib/tsc` で、`file` コマンドで見ると `Mach-O 64-bit executable arm64`（ネイティブバイナリ）です。`lib.*.d.ts` もこのパッケージに同梱されています。
 - `package.json` のメインエクスポート（`"."`）は `lib/version.cjs` で、バージョン番号しか公開していません。プログラムから使う API は `"./unstable/sync"`、`"./unstable/async"`、`"./unstable/ast"` など **`unstable` と名の付いたサブパス** で提供されています。つまり、6.0 までの `import ts from "typescript"; ts.createProgram(...)` のような **従来の JS API をそのまま使うツールは 7.0 では動かない** 可能性があります。
 
 ## 6.0 での主な変更点（このプロジェクトに関係するもの）
@@ -64,7 +67,7 @@
   ```
 
 - 型チェックの結果（エラーメッセージ・エラーコード）は 6.0 と同じになるよう作られています。本ノート集の実験（`strict` 既定値、`verbatimModuleSyntax`、`erasableSyntaxOnly`、Linting 系オプションなど）でも、6.0.3 と 7.0.2 で同じエラーが出ました。
-- backend の tsconfig は 6.0 の非推奨オプションを使っていないので、7.0 でそのまま型チェックが通ります（`npx tsc --noEmit -p .` で確認）。
+- backend の tsconfig は 6.0 の非推奨オプションを使っていないので、7.0 でもそのまま型チェックが通っていました（7.0.2 当時に `npx tsc --noEmit -p .` で確認）。ただし前述のとおり、Vercel のビルドでは問題が出て 6.0 に戻しています。
 
 ## 重要語句
 
@@ -81,7 +84,7 @@
 - **tsx や Vite は TypeScript のバージョンに依存しません。** どちらも型を消すだけ（esbuild / Oxc）なので、TS 6 / 7 の違いは `tsc` による型チェックとエディタの挙動にだけ影響します。
 - **エディタとのバージョン差**: VS Code が内蔵する TypeScript と、プロジェクトの `node_modules` の TypeScript のバージョンが違うと、エディタとビルドで結果が変わることがあります。VS Code では「TypeScript: Select TypeScript Version」でワークスペースのバージョンを選べます（7.0 の言語サービスの使い方は公式の案内を確認してください）。
 - **typescript-eslint などのツール**は TypeScript の JS API に依存しているため、7.0 への対応状況を確認する必要があります。web-app が 6.0 系（`~6.0.2`）に留まっているのは、テンプレートやツールチェーンの互換性を考えた選択と考えられます。
-- `~6.0.2` はパッチ更新（6.0.x）のみ、`^7.0.2` はマイナー更新（7.x.x）まで許容する指定です。TypeScript はマイナーバージョンでも破壊的変更を入れることがあるので、`~` で固定するのはよくある運用です。
+- `~6.0.2` はパッチ更新（6.0.x）のみ、以前の backend の `^7.0.2` はマイナー更新（7.x.x）まで許容する指定でした。TypeScript はマイナーバージョンでも破壊的変更を入れることがあるので、`~` で固定するのはよくある運用です。現在は両プロジェクトとも `~6.0.2` です。
 
 ## 今後に活かせるポイント
 
@@ -91,7 +94,7 @@
 
 ## 改善するなら
 
-- web-app と backend で TypeScript のメジャーバージョンが異なると、型共有（→ `29-type-sharing-fe-be.md`）などで同じ型定義が微妙に違う結果になるリスクがあります。ツールの対応状況が揃ったら、どちらかに統一するのが望ましいです。
+- web-app と backend で TypeScript のメジャーバージョンが異なると、型共有（→ `29-type-sharing-fe-be.md`）などで同じ型定義が微妙に違う結果になるリスクがありました。現在は両方 6.0 系に揃っています（対応済み）。将来 7.0 に上げるときは、ローカルの `tsc` だけでなく Vercel のビルドが通るかも確認してから、両方まとめて上げるのが安全です。
 - web-app の tsconfig に `strict: true` を明示すると、既定値の変化に依存しない設定になります（→ `21-tsconfig-strict.md`）。
 
 ## 次に学ぶこと

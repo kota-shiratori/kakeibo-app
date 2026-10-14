@@ -4,13 +4,13 @@
 
 同じ「環境変数」「`.env` ファイル」でも、**バックエンドとフロントエンドでは性質がまったく違います**。
 
-| | バックエンド（`FRONTEND_URL`） | フロントエンド（`VITE_API_BASE_URL`） |
+| | バックエンド（`FRONTEND_URL`, `DATABASE_URL`） | フロントエンド（`VITE_API_BASE_URL`） |
 | --- | --- | --- |
-| 読む仕組み | dotenv が実行時に `process.env` へ | Vite がビルド時（開発サーバー起動時）に読み込む |
+| 読む仕組み | ローカルは dotenv（`backend/src/dev.ts` の `import "dotenv/config"`）が実行時に `process.env` へ。本番（Vercel Functions）は Vercel に登録した環境変数が `process.env` に入る | Vite がビルド時（開発サーバー起動時）に読み込む |
 | 参照方法 | `process.env.X`（ここでは `env.X`） | `import.meta.env.VITE_X` |
 | 値が使われるタイミング | **サーバー実行時** | **ビルド時にコードへ埋め込まれる** |
 | 誰が見られるか | サーバー内だけ | **ブラウザで誰でも見られる** |
-| 秘密情報を入れてよいか | よい（`.env` を Git に入れなければ） | **絶対に駄目** |
+| 秘密情報を入れてよいか | よい（`.env` を Git に入れなければ）。実際に `DATABASE_URL` は DB のパスワードを含む | **絶対に駄目** |
 
 フロントエンドのコードは最終的にユーザーのブラウザにダウンロードされて実行されます。そこに埋め込まれた値は、開発者ツールやバンドルファイルを見れば誰でも読めます。
 
@@ -30,9 +30,11 @@ API の接続先 URL です。これはブラウザが通信する先なので�
 
 ※ 2026-10-12 時点の手元の `web-app/dist/assets/*.js` を検索すると、`import.meta.env.VITE_API_BASE_URL` の参照は残っておらず、`http://localhost:3000` という文字列が直接埋め込まれ、`/transactions` への fetch に使われていることを確認できます。`dist/` は `web-app/.gitignore:11` で Git 管理外なので、自分で確かめるときは `npm run build` してから検索してください。
 
-### バック: `FRONTEND_URL`
+### バック: `FRONTEND_URL` と `DATABASE_URL`
 
-`backend/src/env.ts:8-11` で `process.env` から読み、起動時に検証しています（→ `24-t3-env-createenv.md`）。サーバー内でのみ使われ、ブラウザには届きません（CORS ヘッダーとしてオリジンが返ることはありますが、それはもともと公開されている情報です）。
+`backend/src/env.ts:4-10` で `process.env` から読み、起動時に検証しています（→ `24-t3-env-createenv.md`）。サーバー内でのみ使われ、ブラウザには届きません（CORS ヘッダーとしてオリジンが返ることはありますが、それはもともと公開されている情報です）。
+
+`DATABASE_URL` は DB のユーザー名・パスワード・ホストを含む **秘密情報** です（→ `../Docker/08-connecting-backend-to-local-db.md`）。これを `VITE_DATABASE_URL` のような名前でフロントの `.env` に置くと、ビルド時にバンドルへ埋め込まれ、誰でも DB に直接接続できてしまいます。「DB にはバックエンドだけが接続し、フロントは API を通す」構成にしているのはこのためです。
 
 ### 2 つの値の関係
 
@@ -42,6 +44,13 @@ backend 側 FRONTEND_URL       →  「どのフロントからのアクセス�
 ```
 
 フロントとバックがお互いの場所を環境変数で知っている構成です。どちらかのポートや URL を変えたら、もう一方の `.env` も合わせて変える必要があります。
+
+本番（Vercel）でも同じ関係で、値は `.env` ではなく **Vercel の各プロジェクトの環境変数設定** に登録します。
+
+- フロント: `VITE_API_BASE_URL` は **ビルド時** に埋め込まれるので、Vercel でのビルド（`web-app/vercel.json` の `buildCommand`）の時点で設定されている必要があります。
+- バック: `FRONTEND_URL` にはデプロイしたフロントのオリジン、`DATABASE_URL` には Neon の接続文字列を設定します（→ `../PostgreSQL/08-neon-and-vercel-attach-database-pool.md`）。
+
+（本番の実際の設定値はこのノートでは未確認です。）
 
 ## 重要語句
 

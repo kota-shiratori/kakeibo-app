@@ -71,7 +71,7 @@ post:
 - **`operationId` は API 全体で重複不可**（大文字小文字も区別される）です。コード生成で `getTransactions()` / `createTransaction()` のような関数名になるので、動詞 + 名詞のキャメルケースが一般的です。このプロジェクトの命名（一覧は複数形 `getTransactions`、作成は単数形 `createTransaction`）は分かりやすい例です。
 - `responses` のキー（`"200"` など）は **文字列** です。YAML では `200:` と書くと数値として解釈されることがあるので、このファイルのようにクォートで囲むのが安全です。
 - Path Item の直下に `parameters` を書くと、そのパスの全メソッドで共通になります（`/transactions/{id}` の `id` など）。
-- `description` は「実装がどう動くか」を正確に書く場所です。POST の説明「受け取った内容をそのまま返します。」（`backend/openapi.yaml:50`）は現在の実装（`backend/src/index.ts:83`）を正直に表しています。一方、GET の説明「指定した種別の収支一覧」（`backend/openapi.yaml:25`）は、実装が種別で絞り込んでいないため現状とずれています（→ `18-spec-vs-implementation-gaps.md`）。
+- `description` は「実装がどう動くか」を正確に書く場所です。GET の説明「指定した種別の収支一覧」（`backend/openapi.yaml:25`）は、実装が `type` に応じて `WHERE amount > 0` / `< 0` で絞り込むようになったので（`backend/src/index.ts:44-49`）、現在は実装と一致しています。一方、POST の説明「受け取った内容をそのまま返します。」（`backend/openapi.yaml:50`）は、実装が DB に `INSERT` して **採番された `id` 付きの行** を返すようになったため（`backend/src/index.ts:93-105`）、**現状とずれています**（→ `18-spec-vs-implementation-gaps.md`）。実装を変えたら仕様書の `description` も一緒に直す、という習慣が大切です。
 
 ## 今後に活かせるポイント
 
@@ -81,7 +81,7 @@ post:
 ## 改善するなら
 
 - 非推奨にしたい操作には `deprecated: true` を付けられます。
-- POST が DB 保存に対応したら、`description` を「収支を1件登録し、採番されたIDを含む登録内容を返します。」のように更新し、レスポンスも `Transaction` に変更します（→ `14-openapi-request-body-responses.md`）。
+- POST は DB 保存に対応済みなので、`description` を「収支を1件登録し、採番されたIDを含む登録内容を返します。」のように更新し、201 のレスポンスも `Transaction` に変更します（→ `14-openapi-request-body-responses.md`）。
 
 ```yaml
 post:

@@ -6,7 +6,7 @@ API は外部から任意のデータを受け取るので、**入力値の検�
 
 ## このプロジェクトでの実装
 
-### GET: クエリの検証 `backend/src/index.ts:19-28`
+### GET: クエリの検証 `backend/src/index.ts:30-39`
 
 ```ts
 const type = c.req.query("type");
@@ -16,31 +16,36 @@ if (!type || !["income", "expense", "all"].includes(type)) {
 }
 ```
 
-### POST: ボディの検証 `backend/src/index.ts:52-81`
+### POST: ボディの検証 `backend/src/index.ts:78-96`
 
 ```ts
 const body = await c.req.json();
 const { item, amount, date } = body;
 
-if (!item || amount === undefined || !date) {             // 56行目: 必須チェック
+if (!item || amount === undefined || !date) {             // 81行目: 必須チェック
   return c.json({ message: "必須項目が不足しています。" }, 400);
 }
 
-if (typeof amount !== "number" || amount === 0) {         // 65行目: 型と値のチェック
+if (typeof amount !== "number" || amount === 0) {         // 85行目: 型と値のチェック
   return c.json({ message: "金額は0以外の数値である必要があります。" }, 400);
 }
 
-if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {                   // 74行目: 形式チェック
+if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {                   // 89行目: 形式チェック
   return c.json({ message: "日付はYYYY-MM-DD形式で入力してください。" }, 400);
 }
 
-return c.json(body, 201);                                  // 83行目
+const result = await pool.query(                           // 93行目: 検証を通過した値を INSERT
+  `INSERT INTO transactions (item, amount, date) VALUES ($1, $2, $3) RETURNING id, item, amount, date`,
+  [item, amount, date],
+);
 ```
+
+検証を通過した値は、そのまま DB に INSERT されます。つまり **この検証の穴は、そのまま DB に入るデータの穴** になります。
 
 良い点:
 
 - ガード節で 1 つずつチェックしていて読みやすい
-- `amount === undefined` で判定しているので、`0` を「未入力」と誤判定しない（`!amount` だと 0 も弾かれる）。0 は 65 行目で別のメッセージで弾いている
+- `amount === undefined` で判定しているので、`0` を「未入力」と誤判定しない（`!amount` だと 0 も弾かれる）。0 は 85 行目で別のメッセージで弾いている
 - エラーメッセージが具体的
 
 ## 重要語句
@@ -55,13 +60,15 @@ return c.json(body, 201);                                  // 83行目
 
 ## 仕様・注意点（現状の限界）
 
-実際に穴になっている点を挙げます。
+実際に穴になっている点を挙げます（現在の `index.ts` を `app.request()` で呼び出し、使い捨ての DB で確認）。
 
-1. **`body` が `any` のため、型チェックが効かない**（05 章）。`item` が文字列かどうかを検証していないので、`{ "item": 123, ... }` や `{ "item": ["a"], ... }` も通ります。
-2. **`date` が文字列かどうかを確かめていない**。`/^\d{4}-\d{2}-\d{2}$/.test(date)` は引数を文字列に変換するので（例外にはならない）、`date: 20250101`（数値）は `"20250101"` となり不一致 → 400 で済みます。一方、`date: ["2025-01-01"]`（配列）は文字列化すると `"2025-01-01"` になるため **検証を通過してしまいます**。型を確かめずに使っているのは危うい書き方です。
-3. **日付として正しいかは見ていない**。`"2025-13-45"` も形式上は通ります。
+1. **`body` が `any` のため、型チェックが効かない**（05 章）。`item` が文字列かどうかを検証していないので、次のような値が **201 で DB に保存されました**。
+   - `{ "item": 123, ... }` → `pg` が数値を文字列にして送り、`item = '123'` として保存
+   - `{ "item": ["a"], ... }` → `pg` が JS の配列を PostgreSQL の配列リテラルに変換して送り、`item = '{"a"}'` という文字列として保存
+2. **`date` が文字列かどうかを確かめていない**。`/^\d{4}-\d{2}-\d{2}$/.test(date)` は引数を文字列に変換するので（例外にはならない）、`date: 20250101`（数値）は `"20250101"` となり不一致 → 400 で済みます（実験で確認）。一方、`date: ["2025-01-01"]`（配列）は文字列化すると `"2025-01-01"` になるため **検証を通過し、201 で `2025-01-01` として保存されました**。型を確かめずに使っているのは危うい書き方です。
+3. **日付として正しいか、長さ・範囲が DB に入るかは見ていない**。`"2025-13-45"` や `"2025-02-30"` は形式上は通り、DB の `DATE` 型に拒否されて **500** になります。同様に `item` が 21 文字（`VARCHAR(20)` 超過）、`amount` が `1.5` や `2147483648`（`INTEGER` に入らない）も 500 です（10 章）。
 4. **不正 JSON / `null` ボディで 500** になる（05・10 章）。
-5. **余計なフィールドが素通り**。83 行目で `body` をそのまま返すため、`{ "item": "a", "amount": 1, "date": "2025-01-01", "isAdmin": true }` もそのままエコーされます。DB に保存する実装になったとき危険です。
+5. **余計なフィールドは無視されるが、検証もされない**。`isAdmin: true` のような余計なフィールドは、INSERT に使う 3 項目以外は DB に渡らず、201 のレスポンスにも含まれません（`RETURNING` の行から組み立てるため、実験で確認）。ただし「受け付けていいのか」を判断しているわけではなく、たまたま使っていないだけです。
 6. **型が絞り込まれない**。検証後も `type` は `string`、`amount` は `any` のまま。検証ロジックと型定義が別々に存在し、ずれやすい。
 7. **検証の重複**。フロント（フォーム）・OpenAPI（`backend/openapi.yaml`）・バックエンドの 3 か所に同じルールが散らばっている。
 8. エラーは最初の 1 件しか返さないので、複数項目が同時に間違っていてもユーザーは 1 つずつしか直せない。
@@ -85,7 +92,7 @@ const parseNewTransaction = (v: unknown): NewTransaction | string => {
 
 ## 改善するなら
 
-Zod 4 はすでに `backend/package.json` に入っている（env.ts で使用）ので、Hono の validator と組み合わせるのが自然です。
+Zod 4 はすでに `backend/package.json` に入っている（env.ts で使用）ので、Hono の validator と組み合わせるのが自然です。スキーマは **DB の型・制約と揃える**（`item` は 20 文字以内、`amount` は整数で `INTEGER` の範囲内）と、DB エラーによる 500 もなくなります（`../Database/03-schema-design-for-kakeibo.md`）。
 
 ### 案1: 追加インストール不要（`hono/validator` + Zod）
 
@@ -94,8 +101,13 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 
 const newTransactionSchema = z.object({
-  item: z.string().min(1),
-  amount: z.number().refine((n) => n !== 0, "金額は0以外の数値である必要があります。"),
+  item: z.string().min(1).max(20), // DB の VARCHAR(20) に合わせる
+  amount: z
+    .number()
+    .int() // DB の INTEGER に合わせる（小数を拒否）
+    .min(-2147483648)
+    .max(2147483647)
+    .refine((n) => n !== 0, "金額は0以外の数値である必要があります。"),
   date: z.iso.date(), // Zod 4: YYYY-MM-DD 形式かつ実在する日付
 });
 
@@ -108,9 +120,13 @@ app.post(
     }
     return parsed.data; // 余計なフィールドは z.object が取り除く
   }),
-  (c) => {
+  async (c) => {
     const tx = c.req.valid("json"); // { item: string; amount: number; date: string }
-    return c.json({ id: 1, ...tx }, 201);
+    const result = await pool.query(
+      `INSERT INTO transactions (item, amount, date) VALUES ($1, $2, $3) RETURNING id, item, amount, date`,
+      [tx.item, tx.amount, tx.date],
+    );
+    return c.json(toTransaction(result.rows[0]), 201);
   },
 );
 ```
@@ -122,11 +138,11 @@ import { zValidator } from "@hono/zod-validator";
 
 app.post("/transactions", zValidator("json", newTransactionSchema), (c) => {
   const tx = c.req.valid("json");
-  return c.json(tx, 201);
+  // ... INSERT して RETURNING の行を返す（案1 と同じ）
 });
 ```
 
-どちらも、検証と型付けが 1 つのスキーマにまとまり、上の限界 1・3・5・6 が解消します。`validator("json")` は壊れた JSON を 400 にする（Content-Type が JSON の場合）ので、4 も改善します（05 章参照）。
+どちらも、検証と型付けが 1 つのスキーマにまとまり、上の限界 1・2・3・5・6 が解消します。`validator("json")` は壊れた JSON を 400 にする（Content-Type が JSON の場合）ので、4 も改善します（05 章参照）。
 
 ## 次に学ぶこと
 

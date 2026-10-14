@@ -30,7 +30,7 @@ allowBuilds:
 
 #### なぜこの設定が必要なのか
 
-- `esbuild` は Go 製のネイティブバイナリを使うツールで、インストール時にスクリプトを実行してプラットフォームに合ったバイナリを準備します（`backend/package-lock.json:871` に `"hasInstallScript": true`）。
+- `esbuild` は Go 製のネイティブバイナリを使うツールで、インストール時にスクリプトを実行してプラットフォームに合ったバイナリを準備します（`backend/package-lock.json:629` に `"hasInstallScript": true`）。
 - 依存パッケージのインストールスクリプトは、悪意あるパッケージが任意コードを実行する経路（サプライチェーン攻撃）になり得ます。そこで **pnpm v10 からは依存のビルドスクリプトをデフォルトで実行しない**ようになりました。
 - `tsx` は内部で esbuild を使う（`backend/node_modules/tsx/package.json` の `dependencies` が `{"esbuild":"~0.28.0"}`）ため、esbuild を許可リストに入れています。
 
@@ -55,6 +55,8 @@ allowBuilds:
 - `backend/README.md:2-3` の手順も `npm install` / `npm run dev`。
 
 **npm は `pnpm-workspace.yaml` を一切読みません。** npm はデフォルトで依存のインストールスクリプトを実行するので、esbuild の許可設定がなくても動いています。つまり現状この YAML は**実質的に何の効果もない**ファイルです。
+
+backend の lock で `hasInstallScript: true` が付いているのは `esbuild`（624 行目〜）と `fsevents`（689 行目〜、macOS 用のファイル監視ライブラリ）の 2 つです。後から追加された `pg` や `@vercel/functions` はインストールスクリプトを持ちません。
 
 ### web-app は npm のみ
 

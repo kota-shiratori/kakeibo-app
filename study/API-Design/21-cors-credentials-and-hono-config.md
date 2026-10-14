@@ -15,7 +15,7 @@
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:8-16`
+`backend/src/index.ts:12-20`
 
 ```ts
 app.use(
@@ -34,11 +34,11 @@ app.use(
 | `origin: [env.FRONTEND_URL]` | `Access-Control-Allow-Origin` | リクエストの `Origin` が配列に **完全一致** すれば、その値を返す |
 | `allowMethods` | `Access-Control-Allow-Methods` | プリフライト応答時のみ付く |
 | `allowHeaders` | `Access-Control-Allow-Headers` | プリフライト応答時のみ付く |
-| `credentials: true` | `Access-Control-Allow-Credentials: true` | 全レスポンスに付く（curl で確認） |
+| `credentials: true` | `Access-Control-Allow-Credentials: true` | 全レスポンスに付く（`app.request()` で確認。許可リストにない Origin へのレスポンスにも付く） |
 
 ### 許可オリジンを環境変数から読んでいる
 
-`origin` に直接文字列を書かず、`env.FRONTEND_URL`（`backend/src/env.ts:9`）を使っています。開発環境・本番環境でフロントの URL が変わっても、コードを変えずに環境変数だけで切り替えられる良い設計です（→ `23-env-vars-and-dotenv.md`）。
+`origin` に直接文字列を書かず、`env.FRONTEND_URL`（`backend/src/env.ts:6`）を使っています。開発環境・本番環境でフロントの URL が変わっても、コードを変えずに環境変数だけで切り替えられる良い設計です（→ `23-env-vars-and-dotenv.md`）。ローカルでは `backend/.env` の値（`http://localhost:5173`）、本番（Vercel Functions）では Vercel のプロジェクト設定に登録した値が使われます。本番ではデプロイしたフロントエンドの URL（`https://...` のオリジン）を設定する必要があります（本番の設定値はこのノートでは未確認）。
 
 ワイルドカード `*` ではなく特定のオリジンを指定しているので、`credentials: true` との組み合わせとしても正しい構成です。
 
@@ -56,7 +56,7 @@ const findAllowOrigin = ((optsOrigin) => {
 })(opts.origin);
 ```
 
-配列の場合は `includes` による **文字列の完全一致** です。一致しなければ `Access-Control-Allow-Origin` を付けないだけで、リクエスト自体は処理されます。
+配列の場合は `includes` による **文字列の完全一致** です。一致しなければ `Access-Control-Allow-Origin` を付けないだけで、リクエスト自体は処理されます。実際、許可リストにない Origin から `text/plain` で POST すると、201 が返って DB に保存されました（→ `20-cors-mechanism-preflight.md`）。
 
 ## 重要語句
 
@@ -68,7 +68,7 @@ const findAllowOrigin = ((optsOrigin) => {
 
 - **現状、`credentials: true` は実質的に効いていません。** フロントの `fetch` はどれも `credentials` を指定していない（既定の `"same-origin"`）ため、クロスオリジンの API には Cookie を送っていません（`web-app/src/hooks/useAddTransactions.ts:14-18` など）。将来 Cookie セッション認証を入れるための準備、と読めます。
 - 同様に `allowHeaders` の `Authorization` も、現在フロントは送っていません。将来のトークン認証の準備です。
-- **`FRONTEND_URL` の末尾スラッシュに注意。** ブラウザが送る `Origin` ヘッダーは `http://localhost:5173` のように **末尾スラッシュもパスもない** 形です。環境変数に `http://localhost:5173/` と書くと完全一致せず、CORS エラーになります。現在のスキーマ `z.string()`（`backend/src/env.ts:9`）ではこの間違いを検出できません（→ `25-zod-env-schema.md`）。
+- **`FRONTEND_URL` の末尾スラッシュに注意。** ブラウザが送る `Origin` ヘッダーは `http://localhost:5173` のように **末尾スラッシュもパスもない** 形です。環境変数に `http://localhost:5173/` と書くと完全一致せず、CORS エラーになります。現在のスキーマ `z.string()`（`backend/src/env.ts:6`）ではこの間違いを検出できません（→ `25-zod-env-schema.md`）。
 - **Hono で `origin: "*"` と `credentials: true` を組み合わせると**、ミドルウェアは `Access-Control-Allow-Origin: *` と `Access-Control-Allow-Credentials: true` を両方返します（`backend/node_modules/hono/dist/middleware/cors/index.js:61`, `:79`）。ライブラリは止めてくれませんが、ブラウザは資格情報付きリクエストのこのレスポンスを拒否します。
 - Cookie をクロスオリジンで送る場合は、Cookie 側の `SameSite` 属性（`None` なら `Secure` 必須）も関係します。
 

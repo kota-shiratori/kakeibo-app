@@ -52,7 +52,7 @@ servers:
     description: ローカル開発環境
 ```
 
-実装のポート番号 `3000`（`backend/src/index.ts:89`）と一致しています。本番環境ができたら配列に追加します。
+ローカル起動用のエントリ `backend/src/dev.ts:6` の `port: 3000` と一致しています。backend は Vercel Functions にもデプロイする構成になったので（`backend/src/index.ts` の `export default app` が Vercel のエントリ）、本番の URL も配列に追加するとよいでしょう（本番 URL はこのノートでは未確認）。
 
 ### security
 
@@ -119,8 +119,8 @@ components:
 servers:
   - url: http://localhost:3000
     description: ローカル開発環境
-  - url: https://api.example.com
-    description: 本番環境
+  - url: https://<本番のドメイン>   # Vercel にデプロイした backend の URL
+    description: 本番環境（Vercel）
 ```
 
 ## 次に学ぶこと

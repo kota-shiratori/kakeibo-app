@@ -1,4 +1,4 @@
-# npm scripts（dev / build / start / lint / preview）
+# npm scripts（dev / typecheck / build / lint / preview）
 
 ## 概要
 
@@ -12,19 +12,19 @@
 ### backend
 
 ```json
-// backend/package.json:4-8
+// backend/package.json:4-7
 "scripts": {
-  "dev": "tsx watch src/index.ts",
-  "build": "tsc",
-  "start": "node dist/index.js"
+  "dev": "tsx watch src/dev.ts",
+  "typecheck": "tsc --noEmit"
 },
 ```
 
 | コマンド | 実行内容 | いつ使う |
 | --- | --- | --- |
-| `npm run dev` | `tsx` で `src/index.ts` を直接実行し、ファイル変更で自動再起動 | 開発中 |
-| `npm run build` | `tsc` で `src/*.ts` → `dist/*.js` に変換（型チェックも行う） | 本番用の成果物を作るとき |
-| `npm start` | ビルド済みの `dist/index.js` を素の Node.js で実行 | 本番環境 |
+| `npm run dev` | `tsx` で `src/dev.ts`（ローカル起動用エントリ）を直接実行し、ファイル変更で自動再起動 | 開発中 |
+| `npm run typecheck` | `tsc --noEmit` で型チェックだけ行う（JS ファイルは出力しない） | コミット前・CI |
+
+以前は `"build": "tsc"`（`dist/` に JS を出力）と `"start": "node dist/index.js"`（コミット `2a1609f` で一時的に `node dist/dev.js`）がありましたが、コミット `b00677a`「Vercel で tsc ビルドを走らせないよう build を typecheck に変更」で両方とも削除され、`typecheck` に置き換わりました。Vercel はデプロイ時に `package.json` の `build` スクリプトがあればそれを実行するため、本番では不要な `tsc` の出力が走らないようにした、という経緯です（本番の仕組みは [09](./09-backend-build-and-start.md)）。現在の `npm run typecheck` は成功（終了コード 0）することを確認しました。
 
 詳細は [08-tsx-dev-runtime.md](./08-tsx-dev-runtime.md) と [09-backend-build-and-start.md](./09-backend-build-and-start.md)。
 
@@ -67,7 +67,7 @@
 
 - 引数を scripts に渡すには `--` を挟みます。例: `npm run dev -- --port 3001`（`vite --port 3001` として実行される）。
 - `oxlint` は **warning だけなら終了コード 0** です。実際にこのプロジェクトで `npx oxlint` を実行すると warning が 2 件出ますが終了コードは 0 でした。CI で warning も失敗扱いにしたいなら `oxlint --deny-warnings` を使います（`npx oxlint --help` で確認）。
-- backend には `lint` がなく、web-app には `start` がない、と 2 つのプロジェクトで揃っていません。
+- backend には `lint` がなく、web-app には単独の `typecheck` がない（`build` の中の `tsc -b` が兼ねている）、と 2 つのプロジェクトで揃っていません。
 - `pre<name>` / `post<name>` という名前のスクリプトを置くと、`<name>` の前後に自動実行されます（例: `prebuild`）。便利ですが暗黙的なので多用は避けるのが無難です。
 
 ## 今後に活かせるポイント
@@ -92,11 +92,9 @@
 ```
 
 ```json
-// backend/package.json（例）
+// backend/package.json（例。typecheck は追加済み）
 "scripts": {
-  "dev": "tsx watch src/index.ts",
-  "build": "tsc",
-  "start": "node dist/index.js",
+  "dev": "tsx watch src/dev.ts",
   "typecheck": "tsc --noEmit",
   "lint": "oxlint"
 }

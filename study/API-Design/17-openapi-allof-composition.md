@@ -52,6 +52,8 @@ export type NewTransaction = Omit<Transaction, "id">;
 
 仕様書は「入力 + id = 登録済み」、フロントは「登録済み − id = 入力」と、方向は違いますが同じ関係を表しています。
 
+実装でも同じ関係になっています。`id` は DB の `GENERATED ALWAYS AS IDENTITY` 列が採番し（`../PostgreSQL/04-identity-columns.md`）、POST は `INSERT ... RETURNING id, item, amount, date` で「入力 + 採番された id」を受け取って返します（`backend/src/index.ts:93-105`）。`id` 列は `BIGINT` で、`pg` からは文字列で返るため `parseInt` で数値に直してから JSON にしています（`../PostgreSQL/07-node-postgres-type-conversion.md`）。
+
 ## 重要語句
 
 - **`allOf`**: すべてのサブスキーマに一致すること（AND）。

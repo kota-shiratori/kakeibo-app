@@ -13,7 +13,7 @@
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:74-81`
+`backend/src/index.ts:89-91`
 
 ```ts
 if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -21,7 +21,23 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 }
 ```
 
-起動中のサーバーに `{"item":"a","amount":100,"date":"2025-13-45"}` を POST したところ、**201 Created** で受け付けられました（curl で確認）。
+`{"item":"a","amount":1,"date":"2025-13-45"}` を POST すると、この検証は **通過** します。
+
+以前（DB 導入前）は受け取った値をそのまま返していたので、**201 Created** で受け付けられていました。現在は値が PostgreSQL の `DATE` 列に INSERT されるため、そこで PostgreSQL が拒否します（実験用 DB で確認）。
+
+```text
+error: date/time field value out of range: "2025-13-45"   ← pg が投げる例外（SQLSTATE 22008）
+```
+
+この例外を backend が捕まえていないので、レスポンスは **500 Internal Server Error**（`text/plain`）です。つまり「存在しない日付が保存される」ことは DB が防いでくれていますが、利用者には「サーバーの故障」に見えてしまいます。本来は検証で弾いて 400 を返すべきです。
+
+psql でも確認すると、PostgreSQL の `DATE` は実在する日付だけを受け付けます。
+
+| 入力 | `'...'::date` の結果 |
+| --- | --- |
+| `2025-02-29` | `ERROR: date/time field value out of range` |
+| `0000-00-00` | `ERROR: date/time field value out of range` |
+| `2024-02-29`（うるう年） | `2024-02-29` |
 
 仕様書側は `format: date` と `pattern` の両方を書いています。
 
@@ -55,7 +71,7 @@ date:
   つまり「`isNaN(new Date(s).getTime())` なら不正」という判定では 2 月 30 日がすり抜けます。厳密に判定するなら「パースした年・月・日が元の文字列と一致するか」まで確認する必要があります。
 - **`format` は JSON Schema 2020-12（OpenAPI 3.1 が採用）では既定で「注釈（annotation）」扱い** で、検証ツールによっては値をチェックしません。`pattern` は必ず検証されます。仕様書に両方書いておくのは、「形式は pattern で確実に、意味は format で表明」という意図として妥当です。
 - `\d` は JavaScript の正規表現では（`u` フラグの有無にかかわらず）ASCII の 0〜9 のみにマッチします。全角数字は通りません。
-- タイムゾーンにも注意。`new Date("2025-01-01")` は **UTC の 0 時** として解釈されますが、`new Date("2025-01-01T00:00")` はローカル時刻として解釈されます。日付だけを扱うなら、文字列のまま扱うのが安全です（このプロジェクトはその方針）。
+- タイムゾーンにも注意。`new Date("2025-01-01")` は **UTC の 0 時** として解釈されますが、`new Date("2025-01-01T00:00")` はローカル時刻として解釈されます。API では日付を `"YYYY-MM-DD"` 文字列のまま扱っています。ただし DB から読み出すときは、`pg` が `DATE` 列を JS の `Date`（**ローカル時刻の 0 時**）に変換して返すため、backend はローカル時刻のメソッドで `"YYYY-MM-DD"` に戻しています（`toYMD`、`backend/src/index.ts:22-27`）。ここで `toISOString().slice(0, 10)` を使うと、日本時間では 1 日前にずれます（→ `../PostgreSQL/07-node-postgres-type-conversion.md`）。
 
 ## 今後に活かせるポイント
 

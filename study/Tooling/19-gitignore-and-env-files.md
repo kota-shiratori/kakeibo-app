@@ -7,7 +7,7 @@
 | 種類 | 例 | 除外する理由 |
 | --- | --- | --- |
 | 依存パッケージ | `node_modules/` | `npm install` で再生成できる。巨大 |
-| ビルド成果物 | `dist/` | `npm run build` で再生成できる |
+| ビルド成果物 | `dist/` | ビルドで再生成できる |
 | 環境変数ファイル | `.env` | **秘密情報や環境固有の値**が入る |
 | ログ | `*.log` | 実行ごとに変わるゴミ |
 | エディタ・OS の設定 | `.vscode/*`, `.idea`, `.DS_Store` | 個人の環境に依存 |
@@ -33,8 +33,10 @@ dist/
 .env.production
 ```
 
-- `backend/.gitignore:18` で `.env` を除外 → `backend/.env`（キー: `FRONTEND_URL`）はコミットされない。
-- **（2026-10-12 に修正済み）** 以前は `dist` が含まれておらず、`npm run build` で作られる `backend/dist/` がコミット対象になってしまう状態でした。現在は `backend/.gitignore:14-15` に `dist/` が追加されています（[09](./09-backend-build-and-start.md)）。
+- `backend/.gitignore:18` で `.env` を除外 → `backend/.env` はコミットされない。
+  - 現在の `backend/env.ts` が要求するキーは `FRONTEND_URL` と `DATABASE_URL`（`backend/src/env.ts:6-7`）ですが、2026-10-14 時点の `backend/.env` には **`FRONTEND_URL` しかありません**（キー名だけ確認。値は見ていません）。このままではローカルで backend が起動しません（[20](./20-local-dev-workflow.md)）。
+  - `DATABASE_URL` にはパスワードを含む接続文字列が入るので、`.env` をコミットしない運用がいっそう重要になりました。
+- **（2026-10-12 に修正済み）** 以前は `dist` が含まれておらず、当時の `npm run build`（`tsc`）で作られる `backend/dist/` がコミット対象になってしまう状態でした。現在は `backend/.gitignore:14-15` に `dist/` が追加されています。なお現在の backend は `tsc --noEmit` で型チェックするだけなので `dist/` は作られません（[09](./09-backend-build-and-start.md)）。
 
 ### web-app/.gitignore
 
@@ -87,7 +89,7 @@ web-app/.gitignore:11:dist     web-app/dist      ← 無視される（OK）
 
 - **`.gitignore` は「まだ追跡していないファイル」にしか効きません。** 一度コミットしてしまったファイルは、後から `.gitignore` に書いても追跡され続けます。外すには `git rm --cached <file>` が必要です。
 - **一度でも秘密をコミット・push したら、履歴に残ります。** ファイルを消すだけでは不十分で、**その秘密を無効化（キーの再発行・パスワード変更）**するのが第一の対応です。
-- 現在このリポジトリは**まだ一度もコミットされていません**（`git status` で `backend/` と `web-app/` が `??` = 未追跡）。最初のコミット前の今が、`.gitignore` を整える絶好のタイミングです。
+- このノートを書いた 2026-10-12 時点ではリポジトリはまだ一度もコミットされていませんでしたが、その後 `068b29e Initial commit` からコミットされています。`git ls-files | grep env` で確認すると、コミットされているのは `backend/src/env.ts`（コード）だけで、`backend/.env` / `web-app/.env` は含まれていません（2026-10-14 に確認）。
 - `backend/.gitignore` の `.yarn/` 関連（`:2-3`）は Yarn 用の設定で、このプロジェクトでは使っていません（テンプレート由来）。
 - `.DS_Store`（macOS）は両方で除外済み。
 
@@ -116,6 +118,8 @@ web-app/.gitignore:11:dist     web-app/dist      ← 無視される（OK）
    # backend/.env.example
    # フロントエンドのオリジン（CORS の許可先）
    FRONTEND_URL=http://localhost:5173
+   # PostgreSQL の接続文字列（ローカルは Docker の DB。../Docker/08-connecting-backend-to-local-db.md）
+   DATABASE_URL=postgresql://postgres:<password>@localhost:5432/kakeibo_db
    ```
    ```sh
    # web-app/.env.example

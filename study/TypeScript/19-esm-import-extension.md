@@ -12,10 +12,16 @@ import { env } from "./env.js";
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:4`
+`backend/src/index.ts:5`
 
 ```ts
 import { env } from "./env.js";
+```
+
+`backend/src/dev.ts:4`（ローカル起動用のエントリ）
+
+```ts
+import app from "./index.js";
 ```
 
 `backend/tsconfig.json:4`
@@ -47,11 +53,13 @@ import App from "./App";
 ## なぜ `.js` なのか
 
 1. **Node.js の ESM は、相対 import の拡張子を省略できません。** CommonJS の `require("./env")` は `.js` などを補完してくれましたが、ESM の `import "./env"` は「`./env` という名前のファイル」を探し、見つからなければエラーになります。
-2. **TypeScript は import パスを書き換えません。** `tsc` で `src/index.ts` → `dist/index.js` に変換しても、`"./env.js"` という文字列はそのまま出力されます。
-3. 実行時に存在するのは `dist/env.js` なので、**実行時のファイル名に合わせて `.js` と書く** 必要があります。
+2. **TypeScript は import パスを書き換えません。** `tsc` で `src/index.ts` → `index.js` に変換しても、`"./env.js"` という文字列はそのまま出力されます。
+3. 変換後に実行時に存在するのは `env.js` なので、**実行時のファイル名に合わせて `.js` と書く** 必要があります。
+
+（以前の backend は `"build": "tsc"` で `dist/` に JS を出力し `node dist/index.js` で動かしていました。現在は `tsc` を `--noEmit` の型チェック専用にし、本番は Vercel Functions が `src/index.ts` を使います（`../Tooling/09-backend-build-and-start.md`）。それでも最終的に Node.js が JS として実行する点は同じなので、このルールは変わりません。）
 4. TypeScript は型チェック時に `"./env.js"` を見ると、対応する `./env.ts` を探しにいってくれるので、型チェックも通ります。
 
-`module: "NodeNext"` を指定すると `moduleResolution` も自動的に `NodeNext` になり（TypeScript 6.0 の `_tsc.js` 内の計算ロジックで確認）、この Node.js のルールが型チェックに反映されます。拡張子を省略すると次のエラーになります（TypeScript 7.0.2 で確認）。
+`module: "NodeNext"` を指定すると `moduleResolution` も自動的に `NodeNext` になり（TypeScript 6.0 の `_tsc.js` 内の計算ロジックで確認）、この Node.js のルールが型チェックに反映されます。拡張子を省略すると次のエラーになります（当時 backend に入っていた TypeScript 7.0.2 で確認。現在の backend は 6.0.3）。
 
 ```
 error TS2835: Relative import paths need explicit file extensions in ECMAScript imports
@@ -85,9 +93,9 @@ backend は `"type": "module"` なので ESM です。
 
 ## 仕様・注意点
 
-- `.ts` と書けば良いのでは？と思うかもしれませんが、`import "./env.ts"` は `allowImportingTsExtensions` が必要で、これは `noEmit`（または `emitDeclarationOnly` / `rewriteRelativeImportExtensions`）と組み合わせる必要があります。backend は `tsc` で `dist/` に出力する（`"build": "tsc"`）ので、この方法は使えません。
+- `.ts` と書けば良いのでは？と思うかもしれませんが、`import "./env.ts"` は `allowImportingTsExtensions` が必要で、これは `noEmit`（または `emitDeclarationOnly` / `rewriteRelativeImportExtensions`）と組み合わせる必要があります。以前の backend は `tsc` で `dist/` に出力していた（`"build": "tsc"`）ので、この方法は使えませんでした。現在は `tsc --noEmit`（`backend/package.json:6`）ですが、本番で JS に変換するのは Vercel のビルドなので、`.ts` 拡張子の import をそのまま扱えるかは確認できていません。`.js` で書いておくのが安全です。
   - TypeScript 5.7 で追加された `rewriteRelativeImportExtensions` を使えば、`"./env.ts"` と書いて出力時に `"./env.js"` へ書き換えてもらうこともできます（このプロジェクトでは未使用）。
-- 開発時の `tsx watch src/index.ts`（`backend/package.json:5`）は、`./env.js` という import を見て `./env.ts` を探して実行してくれるので、開発時も本番（`node dist/index.js`）も同じ書き方で動きます。
+- 開発時の `tsx watch src/dev.ts`（`backend/package.json:5`）は、`./index.js` / `./env.js` という import を見て `./index.ts` / `./env.ts` を探して実行してくれるので、開発時も本番も同じ書き方で動きます。
 - web-app 側は `allowImportingTsExtensions: true` + `noEmit: true` なので `import App from "./App.tsx"` とも書けます（→ `25-tsconfig-bundler-mode.md`）。
 - パッケージの import（`"hono"`, `"hono/cors"` など）は拡張子不要です。パッケージの `package.json` の `exports` フィールドが解決先を決めます。
 
@@ -110,7 +118,7 @@ backend は `"type": "module"` なので ESM です。
 }
 ```
 
-（TypeScript は `rootDir` / `outDir` から元の `.ts` を逆算して型解決してくれます。導入時は TypeScript と tsx の対応状況を確認してください。）
+（TypeScript は `rootDir` / `outDir` から元の `.ts` を逆算して型解決してくれます。ただし現在の backend は `dist/` を出力せず Vercel がビルドするので、マッピング先をどこにすべきかはデプロイ方式に合わせて要検証です。導入時は TypeScript・tsx・Vercel の対応状況を確認してください。）
 
 ## 次に学ぶこと
 

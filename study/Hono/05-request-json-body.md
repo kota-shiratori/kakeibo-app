@@ -16,18 +16,19 @@ const response = await fetch(`${BASE_URL}/transactions`, {
 });
 ```
 
-バックエンド側の受信: `backend/src/index.ts:51-54`
+バックエンド側の受信: `backend/src/index.ts:77-79`
 
 ```ts
 app.post("/transactions", async (c) => {
   const body = await c.req.json();
-
   const { item, amount, date } = body;
 ```
 
-- 51 行目: `await` を使うのでハンドラを `async` にしている
-- 52 行目: ボディを JSON としてパース
-- 54 行目: 分割代入で 3 項目を取り出す
+- 77 行目: `await` を使うのでハンドラを `async` にしている
+- 78 行目: ボディを JSON としてパース
+- 79 行目: 分割代入で 3 項目を取り出す
+
+取り出した値は検証（81-91 行目）のあと、`pool.query` のプレースホルダー `$1, $2, $3` に渡されて DB に INSERT されます（93-96 行目、`../SQL/11-placeholders-and-sql-injection.md`）。
 
 ## 重要語句
 
@@ -48,13 +49,14 @@ json() {
 }
 ```
 
-ここから分かること・実験で確認したこと:
+ここから分かること・実験で確認したこと（現在の `index.ts` を `app.request()` で呼び出して確認。DB は使い捨てのデータベースを使用）:
 
 1. **戻り値の型は `any`**（`json<T = any>(): Promise<T>`）。`body.item` などに型チェックが一切効きません。`c.req.json<{ item: string }>()` と書いても **実行時の検証は行われず**、型を「信じ込ませる」だけです。
-2. **Content-Type をチェックしない**。ヘッダが `text/plain` でも中身が JSON 文字列ならパースされます。
+2. **Content-Type をチェックしない**。ヘッダが `text/plain` でも中身が JSON 文字列ならパースされます。実際に `Content-Type: text/plain` で正しい JSON を POST すると、そのまま **201 で DB に登録** されました。
 3. **不正な JSON は例外**。`{bad` を送ると `JSON.parse` が `SyntaxError` を投げ、ハンドラ内で捕まえていないため Hono の既定エラーハンドラが **500 `Internal Server Error`（text/plain）** を返しました。本来はクライアントのミスなので 400 が適切です。
-4. **`null` を送ると分割代入で落ちる**。ボディ `null` は正しい JSON なのでパースは成功しますが、54 行目の `const { item, amount, date } = body` で `TypeError: Cannot destructure property 'item' of 'body' as it is null.` となり、同じく **500** になりました。
-5. ボディは一度しか読めないストリームですが、Hono の `HonoRequest` はキャッシュするので `c.req.json()` を複数回呼んでも大丈夫です（ただし `c.req.raw.json()` を直接呼ぶとキャッシュを経由しません）。
+4. **`null` を送ると分割代入で落ちる**。ボディ `null` は正しい JSON なのでパースは成功しますが、79 行目の `const { item, amount, date } = body` で `TypeError: Cannot destructure property 'item' of 'body' as it is null.` となり、同じく **500** になりました。
+5. **`any` のまま DB に渡る**。`{ "item": 123, "amount": 1, "date": "2025-10-10" }` は検証（`!item` など）を通過し、`pg` が数値 `123` を文字列 `"123"` として送るので、DB には `item = '123'` として **201 で登録** されました。型の検証をしていないと、意図しない値が黙って保存されます。
+6. ボディは一度しか読めないストリームですが、Hono の `HonoRequest` はキャッシュするので `c.req.json()` を複数回呼んでも大丈夫です（ただし `c.req.raw.json()` を直接呼ぶとキャッシュを経由しません）。
 
 ## 今後に活かせるポイント
 
@@ -105,7 +107,8 @@ app.post(
   }),
   (c) => {
     const body = c.req.valid("json");
-    return c.json(body, 201);
+    // ... pool.query("INSERT ... RETURNING ...", [body.item, body.amount, body.date])
+    return c.json(created, 201);
   },
 );
 ```

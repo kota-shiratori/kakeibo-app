@@ -56,7 +56,7 @@ error: Error | null;
 
 - `const x = "income"` の型は `"income"`（リテラル型）、`let x = "income"` の型は `string` になります。これが widening です。
 - ユニオン型の値は、そのままでは「全メンバーに共通する操作」しかできません。どちらか一方に固有の操作をするには、`===` や `typeof` などで **絞り込み (narrowing)** をする必要があります（→ `16-control-flow-narrowing.md`）。
-- **バックエンドではユニオン型が使われていません。** `backend/src/index.ts:21` では
+- **バックエンドではユニオン型が使われていません。** `backend/src/index.ts:32` では
 
   ```ts
   if (!type || !["income", "expense", "all"].includes(type)) {

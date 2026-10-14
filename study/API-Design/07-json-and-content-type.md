@@ -50,9 +50,9 @@ const data = (await response.json()) as TransactionListInfo;
 ## 仕様・注意点
 
 - **`fetch` は `body` に文字列を渡すと、既定で `Content-Type: text/plain;charset=UTF-8` を付けます。** JSON を送るなら自分で `application/json` を指定する必要があります。
-- **Hono の `c.req.json()` は Content-Type を確認しません。** 中身は `JSON.parse` するだけです（`backend/node_modules/hono/dist/request.js:104-106`）。実際に `Content-Type: text/plain` で JSON 文字列を送っても、サーバーはボディを JSON として処理しました（curl で確認）。
-  - これは CORS の観点で重要です。`text/plain` の POST はプリフライトなしで他サイトから送れる「単純リクエスト」になるため、サーバーが `application/json` 以外を拒否しないと、他サイトから POST を送り込まれる余地が生まれます（→ `21-cors-credentials-and-hono-config.md`）。
-- `Content-Type: application/json` を付けると、CORS ではプリフライト（OPTIONS）が発生します。サーバーの CORS 設定で `allowHeaders: ["Content-Type", ...]` を許可しているのはこのためです（`backend/src/index.ts:13`）。
+- **Hono の `c.req.json()` は Content-Type を確認しません。** 中身は `JSON.parse` するだけです（`backend/node_modules/hono/dist/request.js:104-106`）。実際に `Content-Type: text/plain` で JSON 文字列を送っても、サーバーはボディを JSON として処理し、**DB に INSERT して `201` を返しました**（実験用 DB に対して `app.request()` で確認）。
+  - これは CORS の観点で重要です。`text/plain` の POST はプリフライトなしで他サイトから送れる「単純リクエスト」になるため、サーバーが `application/json` 以外を拒否しないと、他サイトから POST を送り込まれる余地が生まれます。今は POST が実際に DB へ保存するので、**送り込まれたデータがそのまま登録されてしまいます**（ブラウザが止めるのは「レスポンスを読むこと」だけで、リクエスト自体はサーバーに届く → `21-cors-credentials-and-hono-config.md`）。
+- `Content-Type: application/json` を付けると、CORS ではプリフライト（OPTIONS）が発生します。サーバーの CORS 設定で `allowHeaders: ["Content-Type", ...]` を許可しているのはこのためです（`backend/src/index.ts:17`）。
 - `JSON.stringify` の注意:
   - `undefined` のプロパティは消える（`{a: undefined}` → `'{}'`）。
   - `NaN` / `Infinity` は `null` になる。入力画面で `Number("")` は `0`、`Number("abc")` は `NaN` になるので、送信前の検証が大事です（`web-app/src/pages/Input.tsx:32`）。

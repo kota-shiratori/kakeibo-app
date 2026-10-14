@@ -43,6 +43,8 @@ if (ok) {
 
 `Routes` は URL に合う `Route` の要素だけを描画するので、別のパスへ移るとそれまでのページはアンマウントされます（ルーティングの詳細は study/Routing 参照）。つまり「マウントのたびに取得する」設計と「ページ遷移でアンマウントされる」構造の組み合わせで、登録内容が一覧に反映されています。
 
+ただし Home の各カードに出るのは、サーバーが日付の新しい順（`ORDER BY date DESC`、`backend/src/index.ts:51`）で返した一覧の **先頭 3 件** だけです（`maxTransactions={3}`）。新しい日付の取引がすでに 3 件以上ある状態で古い日付の取引を登録すると、再取得はされていても画面には出てきません（並び順の詳細は 16 参照）。
+
 ### 用意されているが使われていない refetch
 
 `web-app/src/hooks/transactions.ts:18` と `web-app/src/hooks/useIncomeTransactions.ts:34-39`

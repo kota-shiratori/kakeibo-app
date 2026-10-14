@@ -21,8 +21,8 @@ HTTP メソッドには、HTTP の仕様（RFC 9110）で定められた 2 つ�
 
 ## このプロジェクトでの実装
 
-- `GET /transactions`（`backend/src/index.ts:18-49`）: 一覧を返すだけで、何も書き換えていません。**安全・冪等** の性質どおりです。
-- `POST /transactions`（`backend/src/index.ts:51-84`）: 「収支を作成する」操作です。現状はまだ保存処理がなく受け取った値を返すだけですが（`backend/src/index.ts:83`）、本来の意味は **非冪等** です。データベースに保存するようになれば、2 回送ると 2 件登録されます。
+- `GET /transactions`（`backend/src/index.ts:29-75`）: DB に `SELECT` を投げて一覧を返すだけで、何も書き換えていません。**安全・冪等** の性質どおりです。
+- `POST /transactions`（`backend/src/index.ts:77-106`）: 「収支を作成する」操作で、**非冪等** です。リクエストのたびに `INSERT`（`backend/src/index.ts:93-96`）が実行され、`id` が新しく採番されるので、同じ内容を 2 回送ると **2 件登録されます**。
 
 フロントエンドでは、登録ボタンにローディング状態を渡しています。
 
@@ -73,7 +73,7 @@ await fetch(`${BASE_URL}/transactions`, {
 });
 ```
 
-※ `Idempotency-Key` ヘッダーは IETF でドラフト段階の仕様です。採用する場合は CORS の `allowHeaders` にも追加が必要です（`backend/src/index.ts:13`）。
+※ `Idempotency-Key` ヘッダーは IETF でドラフト段階の仕様です。採用する場合は CORS の `allowHeaders` にも追加が必要です（`backend/src/index.ts:17`）。
 
 ## 次に学ぶこと
 

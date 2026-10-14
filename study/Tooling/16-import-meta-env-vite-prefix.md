@@ -18,7 +18,7 @@
 ### .env のキー
 
 - `web-app/.env` … キー `VITE_API_BASE_URL`（値はここには書きません）
-- `backend/.env` … キー `FRONTEND_URL`
+- `backend/.env` … キー `FRONTEND_URL`（`backend/src/env.ts` は `DATABASE_URL` も要求するが、2026-10-14 時点の `.env` には未記載。[20](./20-local-dev-workflow.md)）
 
 ### 使用箇所
 
@@ -91,7 +91,7 @@ envPrefix?: string | string[];
 - 本番ビルドの値は「**ビルドした環境の `.env`（またはホスティングの環境変数）」で決まります**。デプロイ先で値を変えたいなら再ビルドが必要。
 - 値は**すべて文字列**です。`VITE_FEATURE_FLAG=false` は真偽値ではなく文字列 `"false"`（truthy）になります。
 - `.env` の読み込み元ディレクトリは `envDir`（デフォルトはプロジェクトルート = `web-app/`）。
-- backend（Node.js）では `import.meta.env` は使えません。backend は `dotenv` で `process.env` に読み込んでいます（`backend/src/env.ts:5`, `:11`）。
+- backend（Node.js）では `import.meta.env` は使えません。backend はローカル起動時に `dotenv` で `process.env` に読み込んでいます（`backend/src/dev.ts:2` の `import "dotenv/config"`、`backend/src/env.ts:9` の `runtimeEnv: process.env`）。本番（Vercel）では `.env` ではなく Vercel の環境変数が `process.env` に入ります。
 
 ## 今後に活かせるポイント
 

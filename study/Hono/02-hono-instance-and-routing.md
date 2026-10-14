@@ -6,13 +6,13 @@
 
 ## このプロジェクトでの実装
 
-`backend/src/index.ts:6`
+`backend/src/index.ts:10`
 
 ```ts
 const app = new Hono();
 ```
 
-`backend/src/index.ts:18`（取引一覧の取得）
+`backend/src/index.ts:29`（取引一覧の取得）
 
 ```ts
 app.get("/transactions", async (c) => {
@@ -20,7 +20,7 @@ app.get("/transactions", async (c) => {
 });
 ```
 
-`backend/src/index.ts:51`（取引の登録）
+`backend/src/index.ts:77`（取引の登録）
 
 ```ts
 app.post("/transactions", async (c) => {

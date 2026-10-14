@@ -30,13 +30,14 @@ amount:
   description: 金額（0以外の数値）
 ```
 
-### 符号ルールが現れる 4 か所
+### 符号ルールが現れる 5 か所
 
 ```mermaid
 flowchart LR
   A["入力画面<br/>ラジオで 収入/支出 を選ぶ<br/>金額は正の数で入力"] -->|"Input.tsx:32-36<br/>支出なら符号反転"| B["POST body<br/>amount: -1500"]
-  B -->|"index.ts:65<br/>0 以外か検証"| C["サーバー"]
-  C -->|"index.ts:42-45<br/>そのまま合計"| D["totalAmount = 収支差額"]
+  B -->|"index.ts:85<br/>0 以外か検証"| C["サーバー"]
+  C -->|"index.ts:44-49<br/>WHERE amount > 0 / < 0"| DB[("PostgreSQL<br/>amount INTEGER")]
+  C -->|"index.ts:63-66<br/>そのまま合計"| D["totalAmount = 収支差額"]
   C --> E["一覧表示<br/>TransactionList.tsx:165<br/>正なら緑・負なら赤"]
 ```
 
@@ -52,11 +53,22 @@ if (transactionType === "expense" && adjustAmount > 0) {
 
 ユーザーには「正の金額 + 種別（ラジオボタン）」で入力させ、送信直前に **UI の表現（種別 + 正の数）からドメインの表現（符号付きの数）へ変換** しています。
 
-**2. サーバーでの検証**（`backend/src/index.ts:65`）: `amount === 0` だけを拒否。符号はどちらも許可。
+**2. サーバーでの検証**（`backend/src/index.ts:85`）: `amount === 0` だけを拒否。符号はどちらも許可。
 
-**3. 合計計算**（`backend/src/index.ts:42-45`）: 全件の `amount` を単純に `reduce` で足すだけで、**収入 − 支出 = 収支差額** が求まる。符号表現の最大の利点です。
+**3. 種別での絞り込み**（`backend/src/index.ts:44-49`）: `type` に応じて SQL に `WHERE amount > 0`（収入）/ `WHERE amount < 0`（支出）を付ける。DB には種別の列がないので、**符号が種別そのもの** として SQL にも現れる。
 
-**4. 表示の色分け**（`web-app/src/components/TransactionList.tsx:164-169`）
+```ts
+if (type === "income" || type === "expense") {
+  const addTypeQuery =
+    type === "income" ? ` WHERE amount > 0` : ` WHERE amount < 0`;
+  historyQuery += addTypeQuery;
+  countQuery += addTypeQuery;
+}
+```
+
+**4. 合計計算**（`backend/src/index.ts:63-66`）: 全件の `amount` を単純に `reduce` で足すだけで、**収入 − 支出 = 収支差額** が求まる。符号表現の最大の利点です。
+
+**5. 表示の色分け**（`web-app/src/components/TransactionList.tsx:164-169`）
 
 ```tsx
 <Text color={transaction.amount > 0 ? "green.500" : "red.500"} fontWeight="bold">
@@ -85,11 +97,11 @@ if (transactionType === "expense" && adjustAmount > 0) {
 ### デメリット・現状の問題点
 
 - **ルールが暗黙**: `Transaction` 型を見ても「負なら支出」とは分からない。フロント・バック・OpenAPI の各所が同じお約束を守る必要がある。
-- **バックエンドは種別を区別していない**: GET の `type=income/expense` で絞り込むには `amount > 0` / `< 0` で判定することになるが、現状は絞り込み自体が未実装（`backend/src/index.ts:30-37`）。
+- **種別の判定が SQL の条件に埋め込まれている**: GET の `type=income/expense` は `amount > 0` / `< 0` で絞り込んでいる（`backend/src/index.ts:44-49`）。ルールを変えるとフロントの色分け・入力変換と、バックの SQL を揃えて直す必要がある。また `amount = 0` の行は DB の制約では防がれておらず（`../Database/03-schema-design-for-kakeibo.md`）、もし入ると `income` にも `expense` にも出てこない（`all` にだけ出る）。
 - **入力の抜け道**: 符号反転は `transactionType === "expense" && adjustAmount > 0` のときだけ。「収入」を選んで負の値を送ると支出として保存されうる。HTML の `min={0}`（`Input.tsx:100`）で通常のフォーム送信は防がれるが、API を直接叩けば防げない。
-- **0 の扱い**: HTML の `min={0}` は 0 を許可するが、サーバーは 0 を拒否する（`backend/src/index.ts:65`）。0 を入力すると 400 になり、画面には汎用メッセージ「取引の登録に失敗しました。」だけが出る（`11-error-handling-strategy.md`）。
+- **0 の扱い**: HTML の `min={0}` は 0 を許可するが、サーバーは 0 を拒否する（`backend/src/index.ts:85`）。0 を入力すると 400 になり、画面には汎用メッセージ「取引の登録に失敗しました。」だけが出る（`11-error-handling-strategy.md`）。
 - **「収入合計」「支出合計」を別々に出すには** 符号でフィルタしてから足す必要があり、`totalAmount` の意味がクエリ（`type`）によって変わる（income なら収入合計、all なら差額）。
-- **浮動小数点**: `amount` は `number`（OpenAPI でも `type: number`）なので、API としては小数も受け付ける（フォームの `type="number"` は既定の `step` が 1 なので通常の画面操作では整数に限られるが、サーバーは検証していない）。日本円なら整数に限定するほうが安全。
+- **小数**: `amount` は `number`（OpenAPI でも `type: number`）で、backend も小数を検証していない（フォームの `type="number"` は既定の `step` が 1 なので通常の画面操作では整数に限られる）。一方 DB の列は `INTEGER` なので、API に `1.5` を送ると DB が `invalid input syntax for type integer` で拒否し、**500** になる（実験で確認、`../PostgreSQL/05-constraints-and-errors.md`）。日本円なら OpenAPI・検証も整数に揃えるべき。
 
 ## 今後に活かせるポイント
 
@@ -136,7 +148,8 @@ amount:
   minimum: 1
 ```
 
-- 利点: ルールが明示的、GET の絞り込みが `type` の一致で書ける、DB でもインデックスを張りやすい、入力の抜け道がない。
+- 利点: ルールが明示的、GET の絞り込みが `WHERE type = 'income'` のように書ける、DB でも `CHECK (type IN ('income','expense'))` や `CHECK (amount > 0)` で制約にできる、入力の抜け道がない。
+- 移行: 既存の `transactions` テーブルに列を足し、既存データの符号から `type` を埋めるマイグレーションが必要になる（`../Database/04-migrations-and-schema-management.md`）。
 - 欠点: 合計計算で `type` を見て符号を付ける処理が必要、項目が 1 つ増える。
 
 一般的な家計簿・会計システムでは **案 B（種別を明示）** が多く採用されます。カテゴリ（食費・交通費など）を追加する将来を考えても、種別を明示しておくほうが拡張しやすいでしょう。

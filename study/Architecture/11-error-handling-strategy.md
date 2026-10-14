@@ -14,13 +14,13 @@
 ### バックエンド: 理由付きの 400
 
 ```ts
-// backend/src/index.ts:21-28
+// backend/src/index.ts:32-39
 if (!type || !["income", "expense", "all"].includes(type)) {
   return c.json({ message: "typeはincome,expense,allのいずれかである必要があります。" }, 400);
 }
 ```
 
-POST では 3 種類のエラーを返し分けています（`backend/src/index.ts:56-81`）。
+POST では 3 種類のエラーを返し分けています（`backend/src/index.ts:81-91`）。
 
 | 条件 | message |
 |---|---|
@@ -62,7 +62,7 @@ if (error) {
 flowchart LR
   subgraph Backend
     V["検証失敗"] --> R400["400 {message: 具体的な理由}"]
-    X["想定外の例外<br/>(不正なJSONなど)"] --> R500["500（Hono のデフォルト）"]
+    X["想定外の例外<br/>(不正なJSON・DB 接続失敗・<br/>DB の制約違反など)"] --> R500["500 text/plain<br/>Internal Server Error<br/>（Hono のデフォルト）"]
   end
   subgraph Frontend Hook
     R400 --> NOK["!response.ok"]
@@ -97,7 +97,17 @@ flowchart LR
 - **ユーザーは何を直せばよいか分からない**: 例えば金額に 0 を入れると、サーバーは「金額は0以外の数値である必要があります。」と返しますが、画面には「取引の登録に失敗しました。」しか出ません。
 - **4xx と 5xx を区別していない**: 「入力を直せば通る」のか「時間をおいて再試行すべき」なのかが伝わりません。
 - **技術的なメッセージがそのまま出ることがある**: `fetch` の reject はブラウザのメッセージがそのまま `error.message` になり、ユーザー向けとしては不親切です。
-- **バックエンドに共通のエラーハンドラがない**: `c.req.json()`（`backend/src/index.ts:52`）が不正な JSON で例外を投げると、`{ message }` 形式ではない 500 応答になり、OpenAPI の契約（400 + ErrorResponse）から外れます。
+- **バックエンドに共通のエラーハンドラがない**: `c.req.json()`（`backend/src/index.ts:78`）が不正な JSON で例外を投げると、`{ message }` 形式ではない 500 応答になり、OpenAPI の契約（400 + ErrorResponse）から外れます。
+- **DB 由来の例外もすべて 500 になる**: `pool.query`（`backend/src/index.ts:53-54`、`93-96`）は try/catch されていません。DB が止まっている（`ECONNREFUSED`）・`DATABASE_URL` が間違っているといった **サーバー側の障害** も、`item` が 21 文字・`amount` が小数や `INTEGER` の範囲外・`date` が `2025-02-30` といった **利用者の入力ミス**（backend の検証をすり抜けて DB で拒否されるもの）も、区別なく 500 になります。
+
+  実験（存在しないポートの `DATABASE_URL` で `app.request()` を実行）:
+
+  ```text
+  GET 500 text/plain; charset=UTF-8 Internal Server Error   ← DB に接続できない
+  POST 500 Internal Server Error                           ← 不正な JSON（{bad）
+  ```
+
+  入力ミスのほうは、backend の検証を DB の型・制約に揃えて 400 にするのが本筋です（`12-validation-layers.md`、`../Database/03-schema-design-for-kakeibo.md`、`../PostgreSQL/05-constraints-and-errors.md`）。
 - 汎用メッセージを出す現状にも利点はあります。サーバーの内部情報を誤って表示する心配がなく、サーバーのメッセージ文言の変更に UI が左右されません。「**サーバーの message はユーザー向けに書かれている**」という合意を契約に含めるなら、活用してよいでしょう。
 
 ## 今後に活かせるポイント
@@ -146,13 +156,22 @@ export async function apiFetch<T>(path: string, fallback: string, init?: Request
 
 ```ts
 // backend（案）
+import { DatabaseError } from "pg";
+
 app.onError((err, c) => {
+  // 検証をすり抜けた入力ミス（DB のデータ例外）は 400 にする
+  // 22001: 文字列が長すぎる / 22003: 数値が範囲外 / 22008: 日付が範囲外 / 22P02: 型に変換できない
+  if (err instanceof DatabaseError && ["22001", "22003", "22008", "22P02"].includes(err.code ?? "")) {
+    return c.json({ message: "入力値が不正です。" }, 400);
+  }
   console.error(err);
   return c.json({ message: "サーバーでエラーが発生しました。" }, 500);
 });
 
 app.notFound((c) => c.json({ message: "見つかりません。" }, 404));
 ```
+
+※ `onError` での 400 への変換は「最後の保険」です。どの項目が悪いのかを伝えるには、DB に送る前の検証で弾く方がよい（SQLSTATE の意味は `../PostgreSQL/05-constraints-and-errors.md`）。
 
 ### さらに進めるなら: 機械可読なエラーコード
 

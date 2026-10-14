@@ -16,25 +16,34 @@
 ### backend
 
 ```json
-// backend/package.json:9-20
+// backend/package.json:8-22
 "dependencies": {
   "@hono/node-server": "^2.1.3",
   "@t3-oss/env-core": "^0.13.11",
+  "@vercel/functions": "^3.10.0",
   "dotenv": "^18.0.7",
   "hono": "^4.13.13",
+  "pg": "^8.23.1",
   "zod": "^4.6.6"
 },
 "devDependencies": {
   "@types/node": "^26.6.5",
+  "@types/pg": "^8.23.1",
   "tsx": "^4.23.0",
-  "typescript": "^7.0.2"
+  "typescript": "~6.0.2"
 }
 ```
 
-- `dependencies`: サーバが動くときに `import` されるもの（`hono`, `@hono/node-server`, `dotenv`, `zod`, `@t3-oss/env-core`）。`node dist/index.js` 実行時に必要です。
-- `devDependencies`: `tsx`（開発時の実行）、`typescript`（`tsc` によるビルド）、`@types/node`（型定義）。**ビルド後の JS を動かすだけなら不要**です。
+- `dependencies`: サーバが動くときに `import` されるもの。
+  - `hono`, `zod`, `@t3-oss/env-core`：アプリ本体・環境変数の検証
+  - `pg`：PostgreSQL への接続（`backend/src/index.ts:4`、→ `../PostgreSQL/06-node-postgres-pool-and-query.md`）
+  - `@vercel/functions`：Vercel 上での DB 接続の後始末（`attachDatabasePool`、`backend/src/index.ts:3`）
+  - `@hono/node-server`, `dotenv`：ローカル起動用の `src/dev.ts` だけが使う。Vercel 上の本番では `src/index.ts` の `app` が直接使われるため実質使われないが、`dev.ts` が `import` する実行時コードなので `dependencies` で問題ない
+- `devDependencies`: `tsx`（開発時の実行）、`typescript`（`npm run typecheck` の型チェック）、`@types/node` / `@types/pg`（型定義）。**型を消した JS を動かすだけなら不要** です。
 
-この分け方は理想的で、「ビルド → `npm install --omit=dev` → `node dist/index.js`」という本番フローが成立します。
+`typescript` は以前 `^7.0.2` でしたが、コミット `05cd00a`「TypeScript を 6.0 に下げる（Vercel のビルドが TS7 で @types/node を解決できないため）」で `~6.0.2` に変わりました（[04](./04-semver-caret-tilde.md)、[09](./09-backend-build-and-start.md)）。
+
+`pg` は JS で書かれたライブラリなので、型定義は別パッケージの `@types/pg` に入っています（`hono` や `zod` は自前で型を同梱しているので `@types/*` が要らない）。
 
 ### web-app
 
@@ -81,7 +90,7 @@
 - `npm install`（引数なし）はデフォルトで **両方** をインストールします。
 - 分類を間違えても開発中は気づきません。たとえば backend で `hono` を devDependencies に入れてしまうと、本番で `--omit=dev` したときに初めて「モジュールが見つからない」エラーになります。
 - **`@types/node` のメジャーバージョンは、実際に使う Node.js のメジャーバージョンに合わせる**のが原則です。このリポジトリでは
-  - backend: `@types/node` `^26.6.5`（`backend/package.json:17`）
+  - backend: `@types/node` `^26.6.5`（`backend/package.json:18`）
   - web-app: `@types/node` `^24.13.3`（`web-app/package.json:22`）
   - 実行環境の Node.js: v22.12.0（この環境で `node -v` を実行して確認）
 
@@ -100,5 +109,5 @@
 ## 次に学ぶこと
 
 - `peerDependencies`（プラグインが「本体はあなたが入れてね」と要求する仕組み。`@vitejs/plugin-react` は `vite: ^8.0.0` を peer に要求している）
-- `optionalDependencies`（OS ごとのネイティブバイナリ配布で使われる。esbuild・oxlint・TypeScript 7 などがこの方式）
+- `optionalDependencies`（OS ごとのネイティブバイナリ配布で使われる。esbuild・oxlint・TypeScript 7 などがこの方式。backend は以前 TypeScript 7 を使っていたが、現在は JS 実装の 6.0 系）
 - Docker のマルチステージビルドで devDependencies を本番イメージから除く方法

@@ -27,7 +27,7 @@ export type TransactionsHooks = {
 その他の `null` / `undefined` の出どころ:
 
 - `document.getElementById("root")` の戻り値は `HTMLElement | null`（DOM の API が「見つからなければ `null`」と決めている。`web-app/node_modules/typescript/lib/lib.dom.d.ts:13080`）→ `12-non-null-assertion.md`
-- Hono の `c.req.query("type")` は `string | undefined`（クエリが無ければ `undefined`）。`backend/src/index.ts:19`
+- Hono の `c.req.query("type")` は `string | undefined`（クエリが無ければ `undefined`）。`backend/src/index.ts:30`
 - Chakra UI の RadioGroup の `onValueChange` で渡される `e.value` は `string | null`（`web-app/node_modules/@zag-js/radio-group/dist/radio-group.types.d.ts:5`）→ `13-type-assertion-as.md`
 
 ## 重要語句

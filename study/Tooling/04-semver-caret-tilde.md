@@ -27,23 +27,27 @@ MAJOR . MINOR . PATCH
 
 ## このプロジェクトでの実装
 
-ほとんどが `^` ですが、web-app の TypeScript だけ `~` です。
+ほとんどが `^` ですが、TypeScript だけ両プロジェクトとも `~` です。
 
 ```json
 // web-app/package.json:27
 "typescript": "~6.0.2",
-// backend/package.json:19
-"typescript": "^7.0.2"
+// backend/package.json:21
+"typescript": "~6.0.2"
 ```
 
-- web-app: `~6.0.2` → `6.0.x` のみ許可。実際にインストールされているのは **6.0.3**（`web-app/node_modules/typescript/package.json` で確認）。
-- backend: `^7.0.2` → `7.x.x` を許可。インストール済みは **7.0.2**。
+- どちらも `~6.0.2` → `6.0.x` のみ許可。実際にインストールされているのは両方 **6.0.3**（各 `node_modules/typescript/package.json` と `npx tsc -v` で確認）。
 
 ### なぜ TypeScript だけ `~` なのか
 
 TypeScript は SemVer に厳密に従っておらず、**マイナーバージョン（例 5.8 → 5.9）でも型チェックが厳しくなり、昨日まで通っていたコードがエラーになる**ことがあります。そのため Vite のテンプレート（`npm create vite`）は TypeScript を `~` で固定しています。web-app はこのテンプレートの設定がそのまま残っています。
 
-backend は Hono のテンプレート（またはその後の手動更新）で `^` になっており、方針が揃っていません。
+### backend は `^7.0.2` から `~6.0.2` に戻した
+
+backend は以前 `"typescript": "^7.0.2"`（Go で書き直されたネイティブ版の TypeScript 7）でした。コミット `05cd00a` のメッセージは「TypeScript を 6.0 に下げる（Vercel のビルドが TS7 で @types/node を解決できないため）」で、**デプロイ先（Vercel）のビルド環境との相性** を理由にメジャーバージョンを 1 つ戻しています。結果として、web-app と backend の TypeScript の指定が揃いました。
+
+- 「最新のメジャーを使う」ことより「本番のビルドが通る」ことが優先される、という実例です。
+- 指定を `^` から `~` に変えたので、`npm update` しても 6.1 などに勝手に上がることはありません。
 
 ### `0.x` 系の `^` は特別
 
@@ -77,12 +81,7 @@ MAJOR が `0` のときは「まだ開発中で何でも壊れうる」とみな
 
 ## 改善するなら
 
-- TypeScript のバージョン指定方針を backend / web-app で揃える。例: 両方 `~` にする。
-  ```json
-  // backend/package.json
-  "typescript": "~7.0.2"
-  ```
-- ただし backend は TypeScript **7**（Go で書き直されたネイティブ版。`tsc --version` で `Version 7.0.2`）、web-app は **6**（従来の JavaScript 実装の最終系）とメジャーも異なる。混乱を避けたいなら、どちらかに揃えるのも一案（揃える前に両方で `tsc` が通るか確認する）。
+- TypeScript のバージョン指定は backend / web-app とも `~6.0.2` に揃った（対応済み）。将来 TypeScript 7 に上げるときは、ローカルの `tsc` だけでなく **Vercel のビルドが通るか** も確認してから上げる。
 - 依存の自動更新には Renovate / Dependabot を使うと、更新 PR が自動で作られ安全に追従できる。
 
 ## 次に学ぶこと

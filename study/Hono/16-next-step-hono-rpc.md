@@ -37,6 +37,7 @@ const data = (await response.json()) as TransactionListInfo;
 - 型を伝えるには、**ルートをメソッドチェーンで定義して、その戻り値の型を使う** 必要があります（`app.get(...)` を別々の文で書くと、`typeof app` にルート情報が蓄積されません）。
 - 入力の型（クエリやボディ）をクライアントに伝えるには、validator（`hono/validator` や `@hono/zod-validator`）を使います。手書きバリデーション（11 章）では入力型は伝わりません。
 - `c.json(x, 200)` / `c.json(err, 400)` のようにステータスを明示すると、クライアントで `res.status` による分岐時にボディの型が絞り込まれます（07 章）。
+- **レスポンスの型は `c.json` に渡した値の型そのもの** です。今の GET では `historyResult.rows` が `pg` の型定義上 `any[]`（`QueryResult<R = any>`）なので、`item` などが `any` になり、RPC にしてもクライアントで型が付きません（`id` は `parseInt` を通すので `number` になる）。`pool.query<{ id: string; item: string; amount: number; date: Date }>(...)` のように行の型を指定するか、変換関数の戻り値に型を付ける必要があります。
 - フロントは backend の **型だけ** を import します（`import type`）。サーバーのコードがフロントのバンドルに入るわけではありません。ただし、フロントの TypeScript から backend のソースを参照できる構成（モノレポ設定）が必要です。
 
 ## 今後に活かせるポイント
@@ -68,7 +69,7 @@ if (res.ok) {
 
 段階的に進めるのがおすすめです。
 
-1. 01 章: `app` 定義をファイル分割
+1. 01 章: `app` 定義をファイル分割（`index.ts` / `dev.ts` で一部対応済み。ルートをチェーンで書き直す必要はある）
 2. 11 章: Zod + validator で入力検証と型付け
 3. 07 章: ステータス付き `c.json` で出力の型を明確化
 4. 本章: `AppType` を export し、フロントの hooks を `hc` に置き換え

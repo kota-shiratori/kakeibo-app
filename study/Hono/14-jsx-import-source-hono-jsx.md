@@ -22,7 +22,7 @@ TypeScript でその JSX を使うために、tsconfig で「JSX を変換する
 
 `hono` パッケージの `package.json` の `exports` に `"./jsx/jsx-runtime"` と `"./jsx/jsx-dev-runtime"` が定義されており、この設定で解決できることを確認しました。
 
-**ただし、現在の backend には `.tsx` ファイルが 1 つもありません**（`backend/src/` は `index.ts` と `env.ts` のみ）。つまりこの設定は **今は使われておらず**、`create-hono` の Node.js テンプレートに最初から入っている設定がそのまま残っていると考えられます。JSON API サーバーとして使う限り、あっても害はありません。
+**ただし、現在の backend には `.tsx` ファイルが 1 つもありません**（`backend/src/` は `index.ts`・`env.ts`・`dev.ts` のみ）。つまりこの設定は **今は使われておらず**、`create-hono` の Node.js テンプレートに最初から入っている設定がそのまま残っていると考えられます。JSON API サーバーとして使う限り、あっても害はありません。
 
 ## 重要語句
 

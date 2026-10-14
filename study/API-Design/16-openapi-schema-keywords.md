@@ -82,12 +82,12 @@ schema:
 
 ## 仕様・注意点
 
-- **`required` に書かないプロパティは省略可能**、**`properties` に書いていないプロパティも既定では許可** されます（`additionalProperties` の既定は「何でも可」）。このファイルでは追加プロパティを禁止していないので、実装が余分なプロパティをそのまま返す挙動（`backend/src/index.ts:83`）も仕様上は違反になりません。
+- **`required` に書かないプロパティは省略可能**、**`properties` に書いていないプロパティも既定では許可** されます（`additionalProperties` の既定は「何でも可」）。このファイルでは追加プロパティを禁止していないので、`{"item":"x","amount":5,"date":"2025-10-02","extra":"y"}` のようなリクエストも仕様上は違反になりません。実装は `item` / `amount` / `date` だけを取り出して INSERT し、DB から返った行でレスポンスを組み立てるので（`backend/src/index.ts:79`, `:93-105`）、余分なプロパティは保存もされず、レスポンスにも含まれません（実験で確認）。
 - `type: integer` は「小数部が 0 の数値」です。JSON Schema では `1.0` も integer とみなされます。
 - `enum` の値は `type` とも一致している必要があります（`type: string` なら文字列のみ）。
 - `pattern` は ECMA-262（JavaScript）の正規表現方言で解釈されるのが基本で、**暗黙に `^...$` で囲まれるわけではありません**。全体一致させたいなら自分で `^` と `$` を書く必要があります（このファイルは書いています）。
 - **Schema Object の `example` キーワードは OpenAPI 3.1 で非推奨（deprecated）** になり、JSON Schema 標準の `examples`（配列）を使うことが推奨されています。このファイルの `item.example`（`:106`）などは動作上問題ありませんが、新しく書くなら `examples: [給料]` の形が推奨です。なお、**Parameter Object の `example`**（`:91`）や Media Type Object の `example` は非推奨ではありません。
-- 金額を `number` にしているので、仕様上は `0.5` のような小数も許可されます。日本円の整数のみを想定するなら `integer` が適切です。
+- 金額を `number` にしているので、仕様上は `0.5` のような小数も許可されます。しかし DB の `amount` 列は `INTEGER` なので、実際に `1.5` を送ると DB がエラーにして 500 が返ります（実験で確認 → `09-input-validation-rules.md`）。日本円の整数のみを想定し、DB とも揃えるなら `integer` が適切です。
 
 ## 今後に活かせるポイント
 
@@ -100,7 +100,7 @@ schema:
 
 ## 改善するなら
 
-フロントの制限（20 文字、`web-app/src/pages/Input.tsx:89`）や日本円前提を仕様書に反映し、`examples` に書き換える例です。
+フロントの制限（20 文字、`web-app/src/pages/Input.tsx:89`）と DB の列定義（`item VARCHAR(20)`、`amount INTEGER` → `../Database/03-schema-design-for-kakeibo.md`）を仕様書に反映し、`examples` に書き換える例です。
 
 ```yaml
 TransactionInput:

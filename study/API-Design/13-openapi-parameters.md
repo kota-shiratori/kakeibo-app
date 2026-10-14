@@ -50,7 +50,7 @@ components:
 
 `components` 側のキー名 `TransactionType` は仕様書内での部品名、`name: type` は実際のクエリ名で、**別物** である点に注意です。
 
-### 実装との対応 — `backend/src/index.ts:19-28`
+### 実装との対応 — `backend/src/index.ts:30-49`
 
 ```ts
 const type = c.req.query("type");
@@ -61,8 +61,20 @@ if (!type || !["income", "expense", "all"].includes(type)) {
 
 - `required: true` → `!type` で未指定を 400 に。
 - `enum: [income, expense, all]` → `includes(type)` で 3 値以外を 400 に。
+- 値の意味 → `income` なら `WHERE amount > 0`、`expense` なら `WHERE amount < 0`、`all` なら条件なしで SQL を組み立てる（`backend/src/index.ts:41-49`）。
 
-この部分は仕様と実装が一致しています（curl で `?type=foo` と未指定がどちらも 400 になることを確認）。
+```ts
+if (type === "income" || type === "expense") {
+  const addTypeQuery =
+    type === "income" ? ` WHERE amount > 0` : ` WHERE amount < 0`;
+  historyQuery += addTypeQuery;
+  countQuery += addTypeQuery;
+}
+```
+
+この部分は仕様と実装が一致しています（`app.request()` で `?type=foo` と未指定がどちらも 400、`?type=expense` では負の金額の行だけが返ることを確認）。
+
+`type` の値そのものは SQL に連結していません。連結しているのは、検証済みの `type` に応じて選んだ **固定の文字列**（`" WHERE amount > 0"` など）だけなので、SQL インジェクションの心配はありません（→ `../SQL/11-placeholders-and-sql-injection.md`）。
 
 ## 重要語句
 

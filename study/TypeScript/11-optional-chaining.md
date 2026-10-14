@@ -48,7 +48,7 @@ const recentTransactions = transactionList.transactions.slice(
 
 - **`?.` が見るのは `null` / `undefined` だけ。** `0` や `""` では止まりません。
 - **短絡は「チェーン全体」に効きます。** `transactionList?.transactions.length` で、`transactionList` が `undefined` のとき `.length` にアクセスしてエラーになることはありません。`transactionList?.transactions?.length` と全部に付ける必要はありません（`transactions` 自体は `undefined` にならない型なので）。
-- **`!x` で判定するときは falsy の範囲に注意。** 今回は `0` 件も「データなし」と扱いたいので `!` が都合よく働いていますが、「`0` は有効な値」という場面（例: 金額 `amount` が `0`）で `if (!amount)` と書くとバグになります。バックエンドの `backend/src/index.ts:56` で `amount === undefined` と明示的に比較しているのは、このためと考えられます。
+- **`!x` で判定するときは falsy の範囲に注意。** 今回は `0` 件も「データなし」と扱いたいので `!` が都合よく働いていますが、「`0` は有効な値」という場面（例: 金額 `amount` が `0`）で `if (!amount)` と書くとバグになります。バックエンドの `backend/src/index.ts:81` で `amount === undefined` と明示的に比較しているのは、このためと考えられます。
 - `??` と `||` の違い: `count || 10` は `count` が `0` のときも `10` になりますが、`count ?? 10` は `0` のままです。
 - 関数呼び出しにも使えます: `onClose?.()`（`onClose` が渡されていなければ何もしない）。
 
